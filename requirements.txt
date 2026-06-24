@@ -2,3 +2,5 @@
 # Phase 1 - GPIO DI/DO testing only
 # Install inside the venv: pip install -r requirements.txt
 gpiod
+minimalmodbus
+pyserial
