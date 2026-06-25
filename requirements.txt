@@ -4,3 +4,4 @@
 gpiod
 minimalmodbus
 pyserial
+spidev
