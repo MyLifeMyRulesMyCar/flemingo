@@ -5,3 +5,9 @@ gpiod
 minimalmodbus
 pyserial
 spidev
+flask
+flask-socketio
+flask-cors
+python-socketio
+python-engineio
+requests
