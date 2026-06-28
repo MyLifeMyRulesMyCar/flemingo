@@ -18,6 +18,7 @@
 
 import logging
 import threading
+import time
 from datetime import datetime
 from collections import deque
 from typing import Dict, List, Optional
@@ -120,7 +121,18 @@ class ModbusManager:
         self.log = deque(maxlen=500)
         self._next_id = 1
         self._retry_config = load_reliability_config()["retry"]
+
+        # Health-check thread: periodically pings each connected device
+        # so physical disconnection is detected without waiting for an
+        # API call. After 5 failed checks the device's breaker opens and
+        # device.connected flips to False.
+        self._health_running = False
+        self._health_thread = None
+        self._health_interval = 5       # seconds between checks
+        self._health_register = 0        # holding register to read as liveness probe
+
         health_status.update("modbus", "unknown", "No devices configured")
+        self._start_health_check()
 
     # ----------------------------------------
     # Aggregate health
@@ -250,6 +262,64 @@ class ModbusManager:
         self._refresh_health()
 
     # ----------------------------------------
+    # Health-check thread (detects physical disconnection)
+    # ----------------------------------------
+    def _mark_disconnected(self, device: ModbusDevice, reason: str = ""):
+        """Called when repeated failures indicate the device is gone."""
+        if not device.connected:
+            return
+        device.connected = False
+        if device.instrument:
+            try:
+                device.instrument.serial.close()
+            except Exception:
+                pass
+            device.instrument = None
+        device.last_error = reason
+        logger.warning(f"Modbus device '{device.name}' disconnected: {reason}")
+        self._log_event(device, "disconnect", reason)
+        self._refresh_health()
+
+    def _start_health_check(self):
+        if self._health_thread and self._health_thread.is_alive():
+            return
+        self._health_running = True
+        self._health_thread = threading.Thread(
+            target=self._health_check_loop, name="Modbus-Health", daemon=True
+        )
+        self._health_thread.start()
+        logger.info("Modbus health-check thread started")
+
+    def _stop_health_check(self):
+        self._health_running = False
+        if self._health_thread:
+            self._health_thread.join(timeout=2)
+        logger.info("Modbus health-check thread stopped")
+
+    def _health_check_loop(self):
+        logger.info("Modbus health-check loop running")
+        while self._health_running:
+            try:
+                devices = list(self.devices.values())
+                for device in devices:
+                    if not device.connected or not device.instrument:
+                        continue
+                    ok, _ = self._call_through_breaker(
+                        device, "health_check",
+                        lambda: device.instrument.read_register(
+                            self._health_register, functioncode=3
+                        ),
+                    )
+                    if ok and device.breaker.state.value != "open":
+                        # Healthy — nothing to do
+                        pass
+                self._refresh_health()
+            except Exception as e:
+                logger.warning(f"Modbus health-check loop error: {e}")
+            time.sleep(self._health_interval)
+        logger.info("Modbus health-check loop stopped")
+
+    # ----------------------------------------
     # Internal helpers
     # ----------------------------------------
     def _require_connected(self, device_id) -> ModbusDevice:
@@ -292,6 +362,7 @@ class ModbusManager:
         except CircuitOpenError as e:
             device.last_error = str(e)
             self._log_event(device, "error", device.last_error)
+            self._mark_disconnected(device, f"Circuit breaker open: {e}")
             return False, None
         except minimalmodbus.NoResponseError:
             device.last_error = f"No response: {op_name}"

@@ -23,6 +23,8 @@ MCP2515_RX_STATUS   = 0xB0
 # -- Registers ------------------------------------------------------------------
 CANCTRL  = 0x0F
 CANSTAT  = 0x0E
+TEC      = 0x1C          # Transmit Error Counter
+REC      = 0x1D          # Receive Error Counter
 CNF1     = 0x2A
 CNF2     = 0x29
 CNF3     = 0x28
@@ -37,6 +39,16 @@ TXB0EID8 = 0x33
 TXB0EID0 = 0x34
 TXB0DLC  = 0x35
 TXB0DATA = 0x36
+
+# TX buffer 2 (used exclusively for health-check transmits so it never
+# conflicts with user-facing send_message() which defaults to buffer 0)
+TXB2CTRL = 0x50
+TXB2SIDH = 0x51
+TXB2SIDL = 0x52
+TXB2EID8 = 0x53
+TXB2EID0 = 0x54
+TXB2DLC  = 0x55
+TXB2DATA = 0x56
 
 RXB0CTRL = 0x60
 RXB0SIDH = 0x61
@@ -365,6 +377,26 @@ class MCP2515:
 
     def get_error_flags(self):
         return self.read_register(EFLG)
+
+    def get_tec(self):
+        """Read Transmit Error Counter."""
+        return self.read_register(TEC)
+
+    def get_rec(self):
+        """Read Receive Error Counter."""
+        return self.read_register(REC)
+
+    def check_tx_result(self, txbuf=0):
+        """Returns 'pending', 'success', or 'error' for a TX buffer.
+        After send_message()+RTS the MCP2515 handles transmission
+        autonomously — poll this until it stops returning 'pending'."""
+        addrs = [TXB0CTRL, 0x40, TXB2CTRL]
+        status = self.read_register(addrs[max(0, min(txbuf, 2))])
+        if status & 0x08:    # TXREQ — still transmitting
+            return 'pending'
+        if status & 0x10:    # TXERR — transmission failed (no ACK)
+            return 'error'
+        return 'success'
 
     def clear_rx_overflow(self):
         self.modify_register(EFLG, 0xC0, 0x00)

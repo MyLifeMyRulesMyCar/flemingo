@@ -194,6 +194,10 @@ def signal_handler(sig, frame):
         can_manager.disconnect()
     except Exception:
         pass
+    try:
+        modbus_manager._stop_health_check()
+    except Exception:
+        pass
     sys.exit(0)
 
 

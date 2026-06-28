@@ -9,11 +9,13 @@
 #
 # Phase 5 reliability additions: connect() goes through a CircuitBreaker
 # so a wiring/power problem doesn't get hammered with reconnect attempts
-# forever, and the RX loop now attempts a breaker-gated reconnect on
-# repeated failures instead of permanently killing itself after 10
-# consecutive errors. Status is mirrored into core.resilience.health_status
-# so api/health_routes.py and core/watchdog.py can see it without reaching
-# into this module's internals.
+# forever. The RX loop detects physical CAN bus disconnection via periodic
+# TX health-checks: it sends a probe frame on a dedicated TX buffer every
+# 5 s; if the MCP2515 can't get an ACK (TXERR flag) three times in a row
+# the controller is torn down and reported as disconnected. SPI-level
+# errors (kernel unload / power loss) are also caught as a backup.
+# No auto-reconnect — the user must explicitly POST /api/can/connect.
+# Status is mirrored into core.resilience.health_status.
 
 import logging
 import threading
@@ -30,7 +32,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BITRATE = 125_000
 DEFAULT_CRYSTAL = 8_000_000
-MAX_CONSECUTIVE_RX_ERRORS = 10
+MAX_CONSECUTIVE_RX_ERRORS = 3    # SPI errors before declaring disconnect
+
+# TX-based health check (detects CAN bus physical disconnection)
+HEALTH_CHECK_INTERVAL = 5.0       # seconds between TX probes
+HEALTH_CHECK_CAN_ID   = 0x7FF     # CAN ID for probe frame (reserved, no user traffic)
+MAX_HEALTH_FAILURES   = 3         # consecutive TX errors → disconnect
+HEALTH_TXBUF          = 2         # TX buffer used for probes (0 is user-facing send)
 
 
 class CANManager:
@@ -102,18 +110,16 @@ class CANManager:
             raise
 
     def _do_connect(self) -> bool:
-        """Used by the public connect() path: brings up the controller AND
-        starts the RX thread. Not used by the RX loop's own reconnect path -
-        that calls _init_controller() directly since it IS the RX thread
-        already and starting a second one would leak a thread."""
+        """Brings up the controller and starts the RX thread if not already
+        running. The RX thread guard in _start_rx_thread() avoids creating
+        a duplicate when reconnecting after a detected disconnection."""
         result = self._init_controller()
         self._start_rx_thread()
         return result
 
     def _init_controller(self) -> bool:
         """Raw hardware bring-up only - no thread management. Called through
-        the circuit breaker by both connect() (via _do_connect) and the RX
-        loop's _attempt_reconnect()."""
+        the circuit breaker by connect() (via _do_connect)."""
         with self._lock:
             logger.info(f"Connecting MCP2515 (bus={self.spi_bus}, device={self.spi_device}, "
                         f"{self.bitrate} bps, crystal={self.crystal})...")
@@ -159,6 +165,11 @@ class CANManager:
     # RX thread
     # ----------------------------------------
     def _start_rx_thread(self):
+        if self.rx_thread and self.rx_thread.is_alive():
+            # Thread already running (idle, waiting for reconnect) —
+            # don't create a second one; the existing loop will pick
+            # up the new connection automatically.
+            return
         self.running = True
         self.rx_thread = threading.Thread(target=self._rx_loop, name="CAN-RX", daemon=True)
         self.rx_thread.start()
@@ -166,77 +177,132 @@ class CANManager:
     def _rx_loop(self):
         logger.info("CAN RX loop started")
         consecutive_errors = 0
-        next_reconnect_attempt = 0.0
+        health_failures = 0
+        last_health_check = 0.0
 
         while self.running:
             try:
                 if not self.connected or not self.controller:
-                    now = time.time()
-                    if now >= next_reconnect_attempt:
-                        if self._attempt_reconnect():
-                            consecutive_errors = 0
-                        else:
-                            # Either the breaker is open or the reconnect
-                            # itself failed - don't busy-loop hammering it,
-                            # but do keep checking every 5s. Once the
-                            # breaker's own timeout elapses it'll go
-                            # HALF_OPEN and this will actually touch
-                            # hardware again.
-                            next_reconnect_attempt = now + 5
+                    # Disconnected — wait for manual reconnect via the API.
                     time.sleep(0.5)
                     continue
 
+                # 1. Process received messages
                 buf = self.controller.available()
                 if buf:
                     msg = self.controller.read_message(buf)
                     if msg:
                         consecutive_errors = 0
+                        health_failures = 0  # traffic flowing → bus alive
                         self._handle_rx(msg)
-                else:
+
+                # 2. Periodic TX health-check (detects CAN bus disconnection
+                #    by sending a probe frame. On a dead bus the MCP2515
+                #    goes bus-off after repeated no-ACK errors, setting
+                #    TXBO in EFLG and TXERR in TXBxCTRL.)
+                now = time.time()
+                if now - last_health_check >= HEALTH_CHECK_INTERVAL:
+                    last_health_check = now
+                    if self._do_health_check():
+                        health_failures = 0
+                    else:
+                        health_failures += 1
+                        logger.warning(
+                            f"CAN health check failed ({health_failures}/"
+                            f"{MAX_HEALTH_FAILURES})"
+                        )
+
+                # 3. Disconnect on repeated TX failures
+                if health_failures >= MAX_HEALTH_FAILURES:
+                    logger.error(
+                        f"CAN disconnected — {health_failures} consecutive "
+                        f"health-check failures"
+                    )
+                    if self.controller:
+                        try:
+                            self.controller.close()
+                        except Exception:
+                            pass
+                        self.controller = None
+                    self.connected = False
+                    health_status.update(
+                        "can", "unhealthy",
+                        f"Disconnected ({health_failures} health-check failures)"
+                    )
+                    health_failures = 0
+                    continue
+
+                if not buf:
                     time.sleep(0.001)
 
             except Exception as e:
+                # SPI-level error (kernel module unloaded / power loss) —
+                # backup detection for when the SPI device itself vanishes
                 consecutive_errors += 1
                 self.stats["errors"] += 1
-                logger.warning(f"CAN RX error ({consecutive_errors}): {e}")
+                logger.warning(f"CAN SPI error ({consecutive_errors}): {e}")
                 time.sleep(0.1)
 
                 if consecutive_errors >= MAX_CONSECUTIVE_RX_ERRORS:
-                    logger.error(f"CAN: {consecutive_errors} consecutive RX errors, "
-                                 f"tearing down and attempting reconnect")
-                    self._attempt_reconnect()
+                    logger.error(f"CAN disconnected — {consecutive_errors} consecutive SPI errors")
+                    if self.controller:
+                        try:
+                            self.controller.close()
+                        except Exception:
+                            pass
+                        self.controller = None
+                    self.connected = False
+                    health_status.update("can", "unhealthy", "Disconnected (SPI error)")
                     consecutive_errors = 0
-                    next_reconnect_attempt = time.time() + 5
 
         logger.info("CAN RX loop stopped")
 
-    def _attempt_reconnect(self) -> bool:
-        """Tears down whatever controller handle exists and tries to bring
-        CAN back up, gated by self.breaker. Safe to call repeatedly - once
-        the breaker is OPEN this returns False almost instantly without
-        touching SPI at all, so a dead bus doesn't get hammered."""
-        if self.controller:
-            try:
-                self.controller.close()
-            except Exception:
-                pass
-            self.controller = None
-        self.connected = False
+    def _do_health_check(self) -> bool:
+        """Send a probe frame on TX buffer 2 and wait for the result.
+        Returns True if the CAN bus is alive (TX acknowledged by another
+        node), False if the bus appears dead (TX error or bus-off).
 
-        @self.breaker.call
-        def _attempt():
-            return self._init_controller()
-
+        Detection is two-pronged:
+        1. Poll TXB2CTRL.TXERR — set when transmission fails after all
+           retries (MCP2515 goes bus-off, TXREQ clears, TXERR latches).
+        2. Read EFLG.TXBO — bus-off flag set when TEC hits 256.
+        Either flag means the bus has no other node to ACK frames."""
         try:
-            _attempt()
-            health_status.update("can", "healthy", "Reconnected")
-            return True
-        except CircuitOpenError as e:
-            health_status.update("can", "unhealthy", str(e))
-            return False
-        except Exception as e:
-            logger.warning(f"CAN: reconnect attempt failed: {e}")
-            health_status.update("can", "unhealthy", f"Reconnect failed: {e}")
+            probe = CANMessage(
+                can_id=HEALTH_CHECK_CAN_ID,
+                data=[0x00],
+                dlc=1,
+            )
+
+            if self.controller.send_message(probe, txbuf=HEALTH_TXBUF):
+                deadline = time.time() + 0.08
+                result = 'pending'
+                while result == 'pending' and time.time() < deadline:
+                    time.sleep(0.002)
+                    try:
+                        result = self.controller.check_tx_result(HEALTH_TXBUF)
+                        if result == 'error':
+                            return False
+                        if result == 'success':
+                            return True
+                        # Still pending — check if chip hit bus-off
+                        eflg = self.controller.get_error_flags()
+                        if eflg & 0x20:  # TXBO
+                            return False
+                    except Exception:
+                        break
+                return False   # timed out while pending → assume failure
+            else:
+                # TX buffer still busy from a prior (or user) message.
+                # Check if the chip is already in bus-off / error-passive.
+                try:
+                    eflg = self.controller.get_error_flags()
+                    if eflg & 0x30:  # TXBO | TXEP
+                        return False
+                except Exception:
+                    pass
+                return True   # busy but no error flags → inconclusive, assume OK
+        except Exception:
             return False
 
     def _handle_rx(self, msg: CANMessage):
