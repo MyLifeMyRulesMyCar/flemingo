@@ -11,3 +11,5 @@ flask-cors
 python-socketio
 python-engineio
 requests
+pyyaml     
+psutil

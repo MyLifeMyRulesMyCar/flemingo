@@ -6,74 +6,129 @@
 # CAN already runs its own RX thread inside core/can_manager.py, and
 # Modbus is on-demand/REST-driven (matches the reference project's
 # modbus_device_routes, which also requires explicit connect calls -
-# no continuous background poll there either). So this daemon's only
-# job is GPIO DI polling.
+# no continuous background poll there either). So this daemon's main
+# loop still only touches GPIO.
+#
+# Phase 5 reliability addition: this daemon is also the one place a
+# WatchdogTimer naturally lives, since it's the only continuously
+# running supervisory loop in the process. It feeds the watchdog once
+# per iteration and registers health checks for GPIO, CAN, and Modbus -
+# can_manager/modbus_manager are passed in (optional) purely so those
+# checks have something to look at; the daemon's own loop() still
+# never touches CAN/Modbus state directly.
 
+import logging
 import threading
 import time
 import traceback
 
 from core.state import state
+from core.watchdog import WatchdogTimer
+from core.config import load_reliability_config
+
+logger = logging.getLogger(__name__)
 
 
 class PurpleIODaemon:
     """
     Polls DI lines at `poll_interval` and writes them into the shared
-    `state`. Does NOT touch CAN or Modbus - those manage themselves.
+    `state`. Does NOT touch CAN or Modbus control flow - those manage
+    themselves. can_manager/modbus_manager, if provided, are only used
+    read-only by the watchdog's health checks.
     """
 
-    def __init__(self, io_manager, poll_interval: float = 0.1):
+    def __init__(self, io_manager, poll_interval: float = 0.1,
+                 can_manager=None, modbus_manager=None):
         self.manager = io_manager
+        self.can_manager = can_manager
+        self.modbus_manager = modbus_manager
+
         self.poll_interval = poll_interval
         self.running = True
         self.loop_count = 0
         self.last_di = [0, 0, 0, 0]
+        self.consecutive_errors = 0
+        self.max_consecutive_errors = 10
         self._thread = None
 
+        wd_config = load_reliability_config()["watchdog"]
+        self.watchdog = WatchdogTimer(
+            timeout=wd_config["timeout"],
+            check_interval=wd_config["check_interval"],
+        )
+        self.watchdog.register_component("gpio", self._check_gpio_health)
+        if self.can_manager is not None:
+            self.watchdog.register_component("can", self._check_can_health)
+        if self.modbus_manager is not None:
+            self.watchdog.register_component("modbus", self._check_modbus_health)
+
+    # ----------------------------------------
+    # Watchdog health checks
+    # ----------------------------------------
+    def _check_gpio_health(self) -> bool:
+        return self.consecutive_errors < self.max_consecutive_errors
+
+    def _check_can_health(self) -> bool:
+        status = self.can_manager.get_status()
+        breaker_state = status.get("circuit_breaker", {}).get("state")
+        # Unhealthy only once the breaker has actually tripped open -
+        # "never connected yet" isn't a daemon-level failure.
+        return breaker_state != "open"
+
+    def _check_modbus_health(self) -> bool:
+        devices = list(self.modbus_manager.devices.values())
+        if not devices:
+            return True
+        return not any(d.breaker.state.value == "open" for d in devices)
+
+    # ----------------------------------------
+    # Main loop
+    # ----------------------------------------
     def loop(self):
-        print("🔄 PurpleIO daemon: main loop started")
-        consecutive_errors = 0
-        max_consecutive_errors = 10
+        logger.info("PurpleIO daemon: main loop started")
 
         while self.running:
             try:
                 self.loop_count += 1
+                self.watchdog.feed()
 
                 try:
                     di_values = self.manager.read_all_inputs()
                 except Exception as e:
-                    print(f"⚠️  Daemon: GPIO read error: {e}")
-                    consecutive_errors += 1
-                    if consecutive_errors >= max_consecutive_errors:
-                        print(f"❌ Daemon: too many consecutive GPIO errors "
-                              f"({consecutive_errors})")
+                    logger.warning(f"Daemon: GPIO read error: {e}")
+                    self.consecutive_errors += 1
+                    if self.consecutive_errors >= self.max_consecutive_errors:
+                        logger.error(f"Daemon: too many consecutive GPIO errors "
+                                     f"({self.consecutive_errors})")
                     time.sleep(1)
                     continue
 
-                consecutive_errors = 0
+                self.consecutive_errors = 0
 
                 for i, val in enumerate(di_values):
                     if val != self.last_di[i]:
-                        print(f"🔄 Daemon: DI{i} changed {self.last_di[i]} -> {val}")
+                        logger.info(f"Daemon: DI{i} changed {self.last_di[i]} -> {val}")
                         self.last_di[i] = val
 
                 state.set_di_all(di_values)
                 time.sleep(self.poll_interval)
 
             except Exception as e:
-                print(f"❌ Daemon: unexpected error in main loop: {e}")
+                logger.error(f"Daemon: unexpected error in main loop: {e}")
                 traceback.print_exc()
                 time.sleep(1)
 
-        print("🛑 PurpleIO daemon: main loop stopped")
+        logger.info("PurpleIO daemon: main loop stopped")
 
     def start(self):
+        self.watchdog.start()
         self._thread = threading.Thread(target=self.loop, name="PurpleIO-Daemon", daemon=True)
         self._thread.start()
-        print("✅ purpleio-daemon running...")
+        logger.info("purpleio-daemon running...")
 
     def stop(self):
-        print("🛑 Stopping purpleio-daemon...")
+        logger.info("Stopping purpleio-daemon...")
         self.running = False
         if self._thread:
             self._thread.join(timeout=2)
+        self.watchdog.stop()

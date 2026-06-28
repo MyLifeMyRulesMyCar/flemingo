@@ -6,7 +6,16 @@
 # as core/io_manager.py plays for DI/DO. It wraps the raw MCP2515 driver
 # with a background RX thread, a rolling message log, basic statistics,
 # and a subscriber hook for live message streaming (e.g. WebSocket later).
+#
+# Phase 5 reliability additions: connect() goes through a CircuitBreaker
+# so a wiring/power problem doesn't get hammered with reconnect attempts
+# forever, and the RX loop now attempts a breaker-gated reconnect on
+# repeated failures instead of permanently killing itself after 10
+# consecutive errors. Status is mirrored into core.resilience.health_status
+# so api/health_routes.py and core/watchdog.py can see it without reaching
+# into this module's internals.
 
+import logging
 import threading
 import time
 from datetime import datetime
@@ -14,9 +23,14 @@ from collections import deque
 from typing import List, Dict, Optional, Callable
 
 from core.mcp2515_driver import MCP2515, CANMessage
+from core.resilience import CircuitBreaker, CircuitOpenError, health_status
+from core.config import load_reliability_config
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BITRATE = 125_000
 DEFAULT_CRYSTAL = 8_000_000
+MAX_CONSECUTIVE_RX_ERRORS = 10
 
 
 class CANManager:
@@ -55,17 +69,54 @@ class CANManager:
             "start_time": None,
         }
 
+        cb_config = load_reliability_config()["circuit_breaker"]["can"]
+        self.breaker = CircuitBreaker(
+            failure_threshold=cb_config["failure_threshold"],
+            timeout=cb_config["timeout"],
+            expected_exception=Exception,
+            name="CAN",
+        )
+        health_status.update("can", "unknown", "Not yet connected")
+
     # ----------------------------------------
     # Connection
     # ----------------------------------------
     def connect(self) -> bool:
-        with self._lock:
-            if self.connected:
-                print("⚠️  CAN already connected")
-                return True
+        if self.connected:
+            logger.warning("CAN already connected")
+            return True
 
-            print(f"🔌 Connecting MCP2515 (bus={self.spi_bus}, device={self.spi_device}, "
-                  f"{self.bitrate} bps, crystal={self.crystal})...")
+        @self.breaker.call
+        def _attempt():
+            return self._do_connect()
+
+        try:
+            result = _attempt()
+            health_status.update("can", "healthy", "Connected")
+            return result
+        except CircuitOpenError as e:
+            health_status.update("can", "unhealthy", str(e))
+            raise RuntimeError(str(e)) from e
+        except Exception as e:
+            health_status.update("can", "unhealthy", f"Connect failed: {e}")
+            raise
+
+    def _do_connect(self) -> bool:
+        """Used by the public connect() path: brings up the controller AND
+        starts the RX thread. Not used by the RX loop's own reconnect path -
+        that calls _init_controller() directly since it IS the RX thread
+        already and starting a second one would leak a thread."""
+        result = self._init_controller()
+        self._start_rx_thread()
+        return result
+
+    def _init_controller(self) -> bool:
+        """Raw hardware bring-up only - no thread management. Called through
+        the circuit breaker by both connect() (via _do_connect) and the RX
+        loop's _attempt_reconnect()."""
+        with self._lock:
+            logger.info(f"Connecting MCP2515 (bus={self.spi_bus}, device={self.spi_device}, "
+                        f"{self.bitrate} bps, crystal={self.crystal})...")
 
             controller = MCP2515(
                 spi_bus=self.spi_bus,
@@ -80,9 +131,8 @@ class CANManager:
             self.controller = controller
             self.connected = True
             self.stats["start_time"] = datetime.now()
-            self._start_rx_thread()
 
-            print("✅ CAN connected")
+            logger.info("CAN connected")
             return True
 
     def disconnect(self):
@@ -102,7 +152,8 @@ class CANManager:
                     pass
                 self.controller = None
             self.connected = False
-            print("✅ CAN disconnected")
+            logger.info("CAN disconnected")
+            health_status.update("can", "degraded", "Disconnected by request")
 
     # ----------------------------------------
     # RX thread
@@ -113,13 +164,26 @@ class CANManager:
         self.rx_thread.start()
 
     def _rx_loop(self):
-        print("📡 CAN RX loop started")
+        logger.info("CAN RX loop started")
         consecutive_errors = 0
+        next_reconnect_attempt = 0.0
 
         while self.running:
             try:
                 if not self.connected or not self.controller:
-                    time.sleep(0.1)
+                    now = time.time()
+                    if now >= next_reconnect_attempt:
+                        if self._attempt_reconnect():
+                            consecutive_errors = 0
+                        else:
+                            # Either the breaker is open or the reconnect
+                            # itself failed - don't busy-loop hammering it,
+                            # but do keep checking every 5s. Once the
+                            # breaker's own timeout elapses it'll go
+                            # HALF_OPEN and this will actually touch
+                            # hardware again.
+                            next_reconnect_attempt = now + 5
+                    time.sleep(0.5)
                     continue
 
                 buf = self.controller.available()
@@ -134,15 +198,46 @@ class CANManager:
             except Exception as e:
                 consecutive_errors += 1
                 self.stats["errors"] += 1
-                print(f"⚠️  CAN RX error ({consecutive_errors}): {e}")
+                logger.warning(f"CAN RX error ({consecutive_errors}): {e}")
                 time.sleep(0.1)
-                if consecutive_errors >= 10:
-                    print("❌ Too many consecutive CAN RX errors - stopping RX thread")
-                    self.running = False
-                    self.connected = False
-                    break
 
-        print("🛑 CAN RX loop stopped")
+                if consecutive_errors >= MAX_CONSECUTIVE_RX_ERRORS:
+                    logger.error(f"CAN: {consecutive_errors} consecutive RX errors, "
+                                 f"tearing down and attempting reconnect")
+                    self._attempt_reconnect()
+                    consecutive_errors = 0
+                    next_reconnect_attempt = time.time() + 5
+
+        logger.info("CAN RX loop stopped")
+
+    def _attempt_reconnect(self) -> bool:
+        """Tears down whatever controller handle exists and tries to bring
+        CAN back up, gated by self.breaker. Safe to call repeatedly - once
+        the breaker is OPEN this returns False almost instantly without
+        touching SPI at all, so a dead bus doesn't get hammered."""
+        if self.controller:
+            try:
+                self.controller.close()
+            except Exception:
+                pass
+            self.controller = None
+        self.connected = False
+
+        @self.breaker.call
+        def _attempt():
+            return self._init_controller()
+
+        try:
+            _attempt()
+            health_status.update("can", "healthy", "Reconnected")
+            return True
+        except CircuitOpenError as e:
+            health_status.update("can", "unhealthy", str(e))
+            return False
+        except Exception as e:
+            logger.warning(f"CAN: reconnect attempt failed: {e}")
+            health_status.update("can", "unhealthy", f"Reconnect failed: {e}")
+            return False
 
     def _handle_rx(self, msg: CANMessage):
         self.stats["rx_total"] += 1
@@ -161,7 +256,7 @@ class CANManager:
             try:
                 sub(entry)
             except Exception as e:
-                print(f"⚠️  CAN subscriber error: {e}")
+                logger.warning(f"CAN subscriber error: {e}")
 
     # ----------------------------------------
     # TX
@@ -205,6 +300,7 @@ class CANManager:
                 "tx_total": self.stats["tx_total"],
                 "errors": self.stats["errors"],
                 "uptime": uptime,
+                "circuit_breaker": self.breaker.get_state(),
             }
 
     def get_recent_messages(self, count: int = 100) -> List[Dict]:

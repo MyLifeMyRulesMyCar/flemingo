@@ -9,7 +9,14 @@
 #
 # Same role as core/io_manager.py and core/can_manager.py: this is
 # the layer a Flask API will sit on top of in Phase 4.
+#
+# Phase 5 reliability additions: each device gets its OWN CircuitBreaker
+# (a dead slave on one port shouldn't degrade any other configured
+# device), connect() retries with backoff since opening a serial port
+# can fail transiently, and aggregate health is mirrored into
+# core.resilience.health_status.
 
+import logging
 import threading
 from datetime import datetime
 from collections import deque
@@ -17,6 +24,11 @@ from typing import Dict, List, Optional
 
 import minimalmodbus
 import serial
+
+from core.resilience import CircuitBreaker, CircuitOpenError, retry_with_backoff, health_status
+from core.config import load_reliability_config
+
+logger = logging.getLogger(__name__)
 
 # ============================================
 # Known ports (USB-to-RS485 adapters)
@@ -65,6 +77,14 @@ class ModbusDevice:
         self.last_connected = None
         self.last_error = None
 
+        cb_config = load_reliability_config()["circuit_breaker"]["modbus"]
+        self.breaker = CircuitBreaker(
+            failure_threshold=cb_config["failure_threshold"],
+            timeout=cb_config["timeout"],
+            expected_exception=Exception,
+            name=f"Modbus-{device_id}",
+        )
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -77,6 +97,7 @@ class ModbusDevice:
             "connected": self.connected,
             "last_connected": self.last_connected,
             "last_error": self.last_error,
+            "circuit_breaker": self.breaker.get_state(),
         }
 
 
@@ -98,6 +119,38 @@ class ModbusManager:
         self.devices: Dict[str, ModbusDevice] = {}
         self.log = deque(maxlen=500)
         self._next_id = 1
+        self._retry_config = load_reliability_config()["retry"]
+        health_status.update("modbus", "unknown", "No devices configured")
+
+    # ----------------------------------------
+    # Aggregate health
+    # ----------------------------------------
+    def _refresh_health(self):
+        """Mirror per-device state into the process-wide health_status
+        registry. Called after connect/disconnect - not after every
+        single read/write, to avoid lock contention on a hot path."""
+        devices = list(self.devices.values())
+        if not devices:
+            health_status.update("modbus", "unknown", "No devices configured")
+            return
+
+        connected = sum(1 for d in devices if d.connected)
+        breakers_open = sum(1 for d in devices if d.breaker.state.value == "open")
+
+        if breakers_open:
+            health_status.update(
+                "modbus", "degraded",
+                f"{breakers_open}/{len(devices)} device(s) circuit-open"
+            )
+        elif connected == len(devices):
+            health_status.update("modbus", "healthy", f"All {len(devices)} device(s) connected")
+        elif connected == 0:
+            health_status.update("modbus", "unhealthy", "No devices connected")
+        else:
+            health_status.update(
+                "modbus", "degraded",
+                f"{connected}/{len(devices)} device(s) connected"
+            )
 
     # ----------------------------------------
     # Device registry
@@ -114,8 +167,9 @@ class ModbusManager:
             device = ModbusDevice(device_id, name, port, slave_id,
                                    baudrate, parity, stopbits, timeout)
             self.devices[device_id] = device
-            print(f"✅ Added Modbus device '{name}' (id={device_id}, "
-                  f"port={port}, slave={slave_id})")
+            logger.info(f"Added Modbus device '{name}' (id={device_id}, "
+                        f"port={port}, slave={slave_id})")
+            self._refresh_health()
             return device_id
 
     def remove_device(self, device_id):
@@ -123,6 +177,7 @@ class ModbusManager:
             if device_id in self.devices:
                 self.disconnect(device_id)
                 del self.devices[device_id]
+                self._refresh_health()
                 return True
             return False
 
@@ -142,24 +197,41 @@ class ModbusManager:
 
         with self._lock:
             port_path = MODBUS_PORTS[device.port]["device"]
-            print(f"🔌 Connecting to '{device.name}' on {port_path} "
-                  f"(slave={device.slave_id}, {device.baudrate}bps)...")
+            logger.info(f"Connecting to '{device.name}' on {port_path} "
+                        f"(slave={device.slave_id}, {device.baudrate}bps)...")
 
-            instrument = minimalmodbus.Instrument(port_path, device.slave_id)
-            instrument.serial.baudrate = device.baudrate
-            instrument.serial.bytesize = 8
-            instrument.serial.parity = _PARITY_MAP[device.parity]
-            instrument.serial.stopbits = device.stopbits
-            instrument.serial.timeout = device.timeout
-            instrument.mode = minimalmodbus.MODE_RTU
-            instrument.clear_buffers_before_each_transaction = True
+            @retry_with_backoff(
+                max_retries=self._retry_config["max_retries"],
+                initial_delay=self._retry_config["initial_delay"],
+                max_delay=self._retry_config["max_delay"],
+                expected_exception=Exception,
+            )
+            def _open_instrument():
+                instrument = minimalmodbus.Instrument(port_path, device.slave_id)
+                instrument.serial.baudrate = device.baudrate
+                instrument.serial.bytesize = 8
+                instrument.serial.parity = _PARITY_MAP[device.parity]
+                instrument.serial.stopbits = device.stopbits
+                instrument.serial.timeout = device.timeout
+                instrument.mode = minimalmodbus.MODE_RTU
+                instrument.clear_buffers_before_each_transaction = True
+                return instrument
 
-            device.instrument = instrument
+            try:
+                device.instrument = _open_instrument()
+            except Exception as e:
+                device.last_error = f"Failed to open {port_path}: {e}"
+                logger.error(f"Connect failed for '{device.name}': {device.last_error}")
+                self._refresh_health()
+                raise RuntimeError(device.last_error) from e
+
             device.connected = True
             device.last_connected = datetime.now().isoformat()
             device.last_error = None
+            device.breaker.reset()
 
-            print(f"✅ Connected: {device.name}")
+            logger.info(f"Connected: {device.name}")
+            self._refresh_health()
             return True
 
     def disconnect(self, device_id):
@@ -174,7 +246,8 @@ class ModbusManager:
                     pass
             device.instrument = None
             device.connected = False
-            print(f"🔌 Disconnected: {device.name}")
+            logger.info(f"Disconnected: {device.name}")
+        self._refresh_health()
 
     # ----------------------------------------
     # Internal helpers
@@ -197,95 +270,118 @@ class ModbusManager:
             "data": data,
         })
 
+    def _call_through_breaker(self, device: ModbusDevice, op_name: str, func):
+        """
+        Runs `func` (a zero-arg callable doing the actual minimalmodbus
+        call) through `device.breaker`. Repeated NoResponseError on THIS
+        device opens THIS device's breaker only - other devices on other
+        ports (or other slave IDs on the same port) are unaffected.
+
+        Returns (ok, result) instead of raising, so callers keep the
+        existing None/False-on-failure return shape rather than needing
+        a try/except at every call site.
+        """
+        @device.breaker.call
+        def _attempt():
+            return func()
+
+        try:
+            result = _attempt()
+            device.last_error = None
+            return True, result
+        except CircuitOpenError as e:
+            device.last_error = str(e)
+            self._log_event(device, "error", device.last_error)
+            return False, None
+        except minimalmodbus.NoResponseError:
+            device.last_error = f"No response: {op_name}"
+            logger.warning(f"[{op_name}] no response")
+            self._log_event(device, "error", device.last_error)
+            return False, None
+
     # ----------------------------------------
     # Holding registers (FC3 read / FC6 write)
     # ----------------------------------------
     def read_holding_register(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
-        try:
-            value = device.instrument.read_register(address, functioncode=3)
-            print(f"[READ]  Holding register {address} = {value}")
+        ok, value = self._call_through_breaker(
+            device, f"holding register {address}",
+            lambda: device.instrument.read_register(address, functioncode=3),
+        )
+        if ok:
+            logger.info(f"[READ]  Holding register {address} = {value}")
             self._log_event(device, "read", f"Holding register {address} = {value}")
             return value
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response reading holding register {address}"
-            print(f"[READ]  No response for holding register {address}")
-            self._log_event(device, "error", device.last_error)
-            return None
+        return None
 
     def write_holding_register(self, device_id, address, value) -> bool:
         device = self._require_connected(device_id)
-        try:
-            device.instrument.write_register(address, value, functioncode=6)
-            print(f"[WRITE] Holding register {address} <- {value}")
+        ok, _ = self._call_through_breaker(
+            device, f"write holding register {address}",
+            lambda: device.instrument.write_register(address, value, functioncode=6),
+        )
+        if ok:
+            logger.info(f"[WRITE] Holding register {address} <- {value}")
             self._log_event(device, "write", f"Holding register {address} <- {value}")
             return True
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response writing holding register {address}"
-            print(f"[WRITE] No response writing holding register {address}")
-            self._log_event(device, "error", device.last_error)
-            return False
+        return False
 
     # ----------------------------------------
     # Input registers (FC4 read-only)
     # ----------------------------------------
     def read_input_register(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
-        try:
-            value = device.instrument.read_register(address, functioncode=4)
-            print(f"[READ]  Input register {address} = {value}")
+        ok, value = self._call_through_breaker(
+            device, f"input register {address}",
+            lambda: device.instrument.read_register(address, functioncode=4),
+        )
+        if ok:
+            logger.info(f"[READ]  Input register {address} = {value}")
             self._log_event(device, "read", f"Input register {address} = {value}")
             return value
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response reading input register {address}"
-            print(f"[READ]  No response for input register {address}")
-            self._log_event(device, "error", device.last_error)
-            return None
+        return None
 
     # ----------------------------------------
     # Coils (FC1 read / FC5 write)
     # ----------------------------------------
     def read_coil(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
-        try:
-            value = device.instrument.read_bit(address, functioncode=1)
-            print(f"[READ]  Coil {address} = {value}")
+        ok, value = self._call_through_breaker(
+            device, f"coil {address}",
+            lambda: device.instrument.read_bit(address, functioncode=1),
+        )
+        if ok:
+            logger.info(f"[READ]  Coil {address} = {value}")
             self._log_event(device, "read", f"Coil {address} = {value}")
             return value
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response reading coil {address}"
-            print(f"[READ]  No response for coil {address}")
-            self._log_event(device, "error", device.last_error)
-            return None
+        return None
 
     def write_coil(self, device_id, address, value) -> bool:
         device = self._require_connected(device_id)
-        try:
-            device.instrument.write_bit(address, value, functioncode=5)
-            print(f"[WRITE] Coil {address} <- {value}")
+        ok, _ = self._call_through_breaker(
+            device, f"write coil {address}",
+            lambda: device.instrument.write_bit(address, value, functioncode=5),
+        )
+        if ok:
+            logger.info(f"[WRITE] Coil {address} <- {value}")
             self._log_event(device, "write", f"Coil {address} <- {value}")
             return True
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response writing coil {address}"
-            print(f"[WRITE] No response writing coil {address}")
-            self._log_event(device, "error", device.last_error)
-            return False
+        return False
 
     # ----------------------------------------
     # Discrete inputs (FC2 read-only)
     # ----------------------------------------
     def read_discrete_input(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
-        try:
-            value = device.instrument.read_bit(address, functioncode=2)
-            print(f"[READ]  Discrete input {address} = {value}")
+        ok, value = self._call_through_breaker(
+            device, f"discrete input {address}",
+            lambda: device.instrument.read_bit(address, functioncode=2),
+        )
+        if ok:
+            logger.info(f"[READ]  Discrete input {address} = {value}")
             self._log_event(device, "read", f"Discrete input {address} = {value}")
             return value
-        except minimalmodbus.NoResponseError:
-            device.last_error = f"No response reading discrete input {address}"
-            print(f"[READ]  No response for discrete input {address}")
-            self._log_event(device, "error", device.last_error)
-            return None
+        return None
 
     # ----------------------------------------
     # Slave scan
@@ -312,7 +408,7 @@ class ModbusManager:
 
                 inst.read_register(register, functioncode=functioncode)
                 found.append(slave_id)
-                print(f"  ✅ Found device at slave ID {slave_id}")
+                logger.info(f"Slave scan: found device at slave ID {slave_id}")
             except Exception:
                 pass
             finally:

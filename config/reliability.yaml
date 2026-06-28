@@ -1,0 +1,38 @@
+# config/reliability.yaml
+# Tuning knobs for core/resilience.py and core/watchdog.py.
+# Edit this on a deployed unit to change behavior without touching code.
+
+circuit_breaker:
+  can:
+    # How many consecutive connect/RX failures before CAN's breaker
+    # opens and stops attempting hardware access for `timeout` seconds.
+    failure_threshold: 5
+    timeout: 60
+
+  modbus:
+    # Same idea, but applied PER DEVICE - one dead slave opening its
+    # breaker doesn't affect any other configured device.
+    failure_threshold: 5
+    timeout: 60
+
+retry:
+  # Used for one-shot operations (opening a serial port, initial SPI
+  # bring-up) - NOT for the per-request CAN/Modbus calls, which are
+  # already covered by the circuit breakers above.
+  max_retries: 3
+  initial_delay: 1
+  max_delay: 30
+
+watchdog:
+  # If the daemon's main loop doesn't call watchdog.feed() within this
+  # many seconds, the watchdog assumes the loop is hung.
+  timeout: 30
+  # How often (seconds) the watchdog re-runs the registered component
+  # health checks (GPIO/CAN/Modbus), independent of the feed timeout.
+  check_interval: 10
+
+logging:
+  level: INFO
+  file: logs/flemingo.log
+  max_bytes: 5242880   # 5 MB
+  backup_count: 5
