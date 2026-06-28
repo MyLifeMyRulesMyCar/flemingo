@@ -178,7 +178,8 @@ class CANManager:
         logger.info("CAN RX loop started")
         consecutive_errors = 0
         health_failures = 0
-        last_health_check = 0.0
+        last_health_check = time.time()    # grace period after connect
+        last_rx_time = time.time()         # bus was just connected
 
         while self.running:
             try:
@@ -194,16 +195,20 @@ class CANManager:
                     if msg:
                         consecutive_errors = 0
                         health_failures = 0  # traffic flowing → bus alive
+                        last_rx_time = time.time()
                         self._handle_rx(msg)
 
-                # 2. Periodic TX health-check (detects CAN bus disconnection
-                #    by sending a probe frame. On a dead bus the MCP2515
-                #    goes bus-off after repeated no-ACK errors, setting
-                #    TXBO in EFLG and TXERR in TXBxCTRL.)
+                # 2. Periodic health-check.  If real CAN traffic was received
+                #    within the last interval, the bus is provably alive
+                #    and no TX probe is needed.  Only when the bus goes
+                #    silent does the driver send a dedicated probe frame
+                #    on TX buffer 2 and poll for ACK / error flags.
                 now = time.time()
                 if now - last_health_check >= HEALTH_CHECK_INTERVAL:
                     last_health_check = now
-                    if self._do_health_check():
+                    if now - last_rx_time <= HEALTH_CHECK_INTERVAL:
+                        health_failures = 0
+                    elif self._do_health_check():
                         health_failures = 0
                     else:
                         health_failures += 1
@@ -291,6 +296,9 @@ class CANManager:
                             return False
                     except Exception:
                         break
+                # Timed out — abort the stuck transmission so the next
+                # health-check starts with a clean buffer.
+                self.controller.abort_tx(HEALTH_TXBUF)
                 return False   # timed out while pending → assume failure
             else:
                 # TX buffer still busy from a prior (or user) message.

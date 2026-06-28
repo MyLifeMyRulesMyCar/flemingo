@@ -398,6 +398,13 @@ class MCP2515:
             return 'error'
         return 'success'
 
+    def abort_tx(self, txbuf=0):
+        """Abort a pending transmission by clearing the TXREQ bit.
+        Safe to call even if the buffer is already free."""
+        addrs = [TXB0CTRL, 0x40, TXB2CTRL]
+        ctrl = addrs[max(0, min(txbuf, 2))]
+        self.spi.xfer2([MCP2515_BIT_MODIFY, ctrl, 0x08, 0x00])
+
     def clear_rx_overflow(self):
         self.modify_register(EFLG, 0xC0, 0x00)
 
