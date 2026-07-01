@@ -6,6 +6,7 @@
 
 from flask import Blueprint, jsonify, request
 from core.state import state
+from api.auth_decorators import require_auth, require_role
 
 io_api = Blueprint("io_api", __name__)
 
@@ -20,6 +21,7 @@ def set_io_manager(manager):
 
 
 @io_api.route("/api/io", methods=["GET"])
+@require_role("viewer")
 def get_io():
     """Current DI/DO state."""
     return jsonify({
@@ -29,6 +31,7 @@ def get_io():
 
 
 @io_api.route("/api/io/do/<int:channel>", methods=["POST"])
+@require_role("operator")
 def set_do(channel):
     """Set a single digital output. Body: {"state": true/false}"""
     if not (0 <= channel < 4):
@@ -48,6 +51,7 @@ def set_do(channel):
 
 
 @io_api.route("/api/io/status", methods=["GET"])
+@require_role("viewer")
 def get_io_hw_status():
     """Whether GPIO is actually driving hardware or running simulated."""
     return jsonify(_io_manager.get_status())

@@ -14,6 +14,7 @@ from datetime import datetime
 import time
 
 from core.resilience import health_status
+from api.auth_decorators import require_role
 
 health_api = Blueprint("health_api", __name__)
 
@@ -43,6 +44,7 @@ def health():
 
 
 @health_api.route("/api/health/detailed", methods=["GET"])
+@require_role("viewer")
 def health_detailed():
     """Per-subsystem status snapshot, including watchdog + circuit breaker state."""
     io_status = _io_manager.get_status()

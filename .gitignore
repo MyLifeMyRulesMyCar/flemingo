@@ -156,3 +156,11 @@ env/
 *.pid
 *.seed
 *.pid.lock
+
+# Phase 6 auth - NEVER commit these
+# jwt_secret.key: random signing secret generated at first boot (0600)
+# users.json: hashed credentials, also generated at first boot (0600)
+# Losing these files means all users are logged out and the default
+# admin bootstrap fires again on next start.
+config/jwt_secret.key
+config/users.json

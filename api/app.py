@@ -10,8 +10,10 @@
 #   - A separate broadcast thread pushes `state` to WebSocket clients
 #     on its own cadence, decoupled from the daemon's poll rate
 #
-# NOTE: no auth yet. Every route below is open. Don't expose this
-# past your LAN until that's added.
+# Phase 6: JWT auth + role model is now active on all routes except
+#   GET /api/health and POST /api/auth/login|refresh.
+#   On first boot, a single admin account is created and its generated
+#   password is printed ONCE to stdout - store it immediately.
 
 import sys
 import os
@@ -39,15 +41,34 @@ from api.io_routes import io_api, set_io_manager
 from api.can_routes import can_api, set_can_manager
 from api.modbus_routes import modbus_api, set_modbus_manager
 from api.health_routes import health_api, set_managers
+from api.auth_routes import auth_api
+from core.auth_manager import init_auth_manager
+from core.config import load_reliability_config
 
 logger = logging.getLogger(__name__)
+
+# ============================================
+# Auth - must come before app construction so the first-boot password
+# banner appears before anything else tries to start.
+# Tuning values come from config/reliability.yaml's `auth:` section.
+# ============================================
+_cfg = load_reliability_config()
+_auth_cfg = _cfg.get("auth", {})
+init_auth_manager(
+    access_token_minutes=_auth_cfg.get("access_token_minutes", 30),
+    refresh_token_days=_auth_cfg.get("refresh_token_days", 7),
+    min_password_length=_auth_cfg.get("min_password_length", 10),
+)
 
 # ============================================
 # App + extensions
 # ============================================
 app = Flask(__name__)
 
-# Wide open for now - tighten this once you have a real auth/CORS story.
+# Phase 6: lock this down to known origins once you have a frontend/
+# integrator URL to whitelist. For now, the LAN-only deployment means
+# wide-open CORS is acceptable on the bench but shouldn't ship to a
+# customer site without a real allowlist.
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
@@ -74,9 +95,10 @@ app.register_blueprint(io_api)
 app.register_blueprint(can_api)
 app.register_blueprint(modbus_api)
 app.register_blueprint(health_api)
+app.register_blueprint(auth_api)
 
 print("=" * 60)
-print("PurpleIO API Server")
+print("PurpleIO API Server - Phase 6 (auth enabled)")
 print("=" * 60)
 
 # ============================================
@@ -178,9 +200,9 @@ def status():
     return jsonify({
         "status": "ok",
         "message": "PurpleIO API online",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "websocket": "enabled",
-        "auth": "NOT IMPLEMENTED - all routes are open",
+        "auth": "JWT (Phase 6) - roles: viewer / operator / admin",
     })
 
 
@@ -214,9 +236,10 @@ if __name__ == "__main__":
     HOST = os.getenv("PURPLEIO_HOST", "0.0.0.0")
     PORT = int(os.getenv("PURPLEIO_PORT", "5000"))
 
-    print(f"📡 HTTP API: http://{HOST}:{PORT}")
+    print(f"📡 HTTP API:  http://{HOST}:{PORT}")
     print(f"🔌 WebSocket: ws://{HOST}:{PORT}")
-    print("⚠️  No auth configured - every route above is open")
+    print(f"🔑 Auth:      JWT (login at POST /api/auth/login)")
+    print(f"   Roles:     viewer < operator < admin")
     print("=" * 60)
 
     socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)

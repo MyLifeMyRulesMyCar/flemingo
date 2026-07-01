@@ -7,6 +7,7 @@
 # hardware).
 
 from flask import Blueprint, jsonify, request
+from api.auth_decorators import require_role
 
 can_api = Blueprint("can_api", __name__)
 
@@ -19,11 +20,13 @@ def set_can_manager(manager):
 
 
 @can_api.route("/api/can/status", methods=["GET"])
+@require_role("viewer")
 def get_status():
     return jsonify(_can_manager.get_status())
 
 
 @can_api.route("/api/can/connect", methods=["POST"])
+@require_role("operator")
 def connect():
     """Body (optional): {"bitrate": 125000, "crystal": 8000000}"""
     data = request.get_json(silent=True) or {}
@@ -41,24 +44,28 @@ def connect():
 
 
 @can_api.route("/api/can/disconnect", methods=["POST"])
+@require_role("operator")
 def disconnect():
     _can_manager.disconnect()
     return jsonify({"message": "CAN disconnected"})
 
 
 @can_api.route("/api/can/messages", methods=["GET"])
+@require_role("viewer")
 def get_messages():
     count = int(request.args.get("count", 100))
     return jsonify({"messages": _can_manager.get_recent_messages(count)})
 
 
 @can_api.route("/api/can/messages/clear", methods=["POST"])
+@require_role("operator")
 def clear_messages():
     _can_manager.clear_log()
     return jsonify({"message": "Log cleared"})
 
 
 @can_api.route("/api/can/send", methods=["POST"])
+@require_role("operator")
 def send():
     """Body: {"can_id": 291, "data": [1,2,3,4], "extended": false}
     can_id and data entries may be given as ints or hex strings ("0x123")."""

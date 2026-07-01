@@ -5,6 +5,7 @@
 
 from flask import Blueprint, jsonify, request
 from core.modbus_manager import MODBUS_PORTS
+from api.auth_decorators import require_role
 
 modbus_api = Blueprint("modbus_api", __name__)
 
@@ -17,16 +18,19 @@ def set_modbus_manager(manager):
 
 
 @modbus_api.route("/api/modbus/ports", methods=["GET"])
+@require_role("viewer")
 def get_ports():
     return jsonify({"ports": MODBUS_PORTS})
 
 
 @modbus_api.route("/api/modbus/devices", methods=["GET"])
+@require_role("viewer")
 def get_devices():
     return jsonify({"devices": _modbus_manager.get_all_devices()})
 
 
 @modbus_api.route("/api/modbus/devices", methods=["POST"])
+@require_role("admin")
 def create_device():
     """Body: {"name": "...", "port": "ttyUSB0", "slave_id": 1,
               "baudrate": 115200, "parity": "N", "stopbits": 1}"""
@@ -52,6 +56,7 @@ def create_device():
 
 
 @modbus_api.route("/api/modbus/devices/<device_id>", methods=["DELETE"])
+@require_role("admin")
 def delete_device(device_id):
     if _modbus_manager.remove_device(device_id):
         return jsonify({"message": "Device removed"})
@@ -59,6 +64,7 @@ def delete_device(device_id):
 
 
 @modbus_api.route("/api/modbus/devices/<device_id>/connect", methods=["POST"])
+@require_role("operator")
 def connect_device(device_id):
     try:
         _modbus_manager.connect(device_id)
@@ -68,12 +74,14 @@ def connect_device(device_id):
 
 
 @modbus_api.route("/api/modbus/devices/<device_id>/disconnect", methods=["POST"])
+@require_role("operator")
 def disconnect_device(device_id):
     _modbus_manager.disconnect(device_id)
     return jsonify({"message": "Disconnected"})
 
 
 @modbus_api.route("/api/modbus/devices/<device_id>/read", methods=["POST"])
+@require_role("operator")
 def read_register(device_id):
     """Body: {"address": 0, "function_code": 3}
     FC3=holding, FC4=input, FC1=coil, FC2=discrete input"""
@@ -103,6 +111,7 @@ def read_register(device_id):
 
 
 @modbus_api.route("/api/modbus/devices/<device_id>/write", methods=["POST"])
+@require_role("operator")
 def write_register(device_id):
     """Body: {"address": 0, "value": 42, "function_code": 6}
     FC6=holding register write, FC5=coil write"""
@@ -132,6 +141,7 @@ def write_register(device_id):
 
 
 @modbus_api.route("/api/modbus/scan", methods=["POST"])
+@require_role("operator")
 def scan():
     """Body: {"port": "ttyUSB0", "start_id": 1, "end_id": 10, "baudrate": 115200}"""
     data = request.get_json(silent=True) or {}
@@ -148,6 +158,7 @@ def scan():
 
 
 @modbus_api.route("/api/modbus/logs", methods=["GET"])
+@require_role("viewer")
 def get_logs():
     count = int(request.args.get("count", 100))
     return jsonify({"logs": _modbus_manager.get_logs(count)})

@@ -36,3 +36,19 @@ logging:
   file: logs/flemingo.log
   max_bytes: 5242880   # 5 MB
   backup_count: 5
+
+auth:
+  # Duration of short-lived access tokens (minutes).
+  # Shorter = more secure, more refreshes. 30 min suits a LAN operator
+  # with a dashboard open. Increase if token-refresh churn is annoying
+  # on slow embedded clients.
+  access_token_minutes: 30
+
+  # Duration of refresh tokens (days). These are used ONLY to mint new
+  # access tokens; they're not sent on every request. 7 days means a
+  # field tech logging in on Monday can work through the week without
+  # re-entering a password.
+  refresh_token_days: 7
+
+  # Minimum password length enforced at create_user / change_password.
+  min_password_length: 10
