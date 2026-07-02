@@ -52,3 +52,21 @@ auth:
 
   # Minimum password length enforced at create_user / change_password.
   min_password_length: 10
+
+security:
+  # CORS allowed origins — controls which browser origins can make
+  # credentialed cross-origin requests to the API.
+  #
+  # Bench / development (default):
+  #   cors_origins: ["*"]   ← any origin allowed, fine when device is
+  #                           not reachable from the internet.
+  #
+  # Customer site / production:
+  #   Replace "*" with the exact origin of your dashboard or integrator.
+  #   e.g.  cors_origins: ["http://192.168.1.50:3000"]
+  #         cors_origins: ["https://flemingo.local", "http://192.168.1.50"]
+  #
+  # Field override without editing this file:
+  #   PURPLEIO_CORS_ORIGINS="http://192.168.1.50:3000" python3 api/app.py
+  cors_origins:
+    - "*"

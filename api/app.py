@@ -65,13 +65,22 @@ init_auth_manager(
 # ============================================
 app = Flask(__name__)
 
-# Phase 6: lock this down to known origins once you have a frontend/
-# integrator URL to whitelist. For now, the LAN-only deployment means
-# wide-open CORS is acceptable on the bench but shouldn't ship to a
-# customer site without a real allowlist.
-CORS(app, resources={r"/*": {"origins": "*"}})
+# Phase 7: CORS origins from config/reliability.yaml `security.cors_origins`
+# with an env-var override for field deployments.
+# Default is ["*"] (bench-safe), should be locked to specific origins
+# before shipping to a customer site, e.g.:
+#   cors_origins: ["http://192.168.1.50:3000"]
+# or via env:
+#   PURPLEIO_CORS_ORIGINS="http://192.168.1.50:3000" python3 api/app.py
+_security_cfg = _cfg.get("security", {})
+_cors_env = os.getenv("PURPLEIO_CORS_ORIGINS", "").strip()
+if _cors_env:
+    _cors_origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+else:
+    _cors_origins = _security_cfg.get("cors_origins", ["*"])
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+CORS(app, resources={r"/*": {"origins": _cors_origins}})
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode="threading")
 
 # ============================================
 # Hardware managers
@@ -98,7 +107,7 @@ app.register_blueprint(health_api)
 app.register_blueprint(auth_api)
 
 print("=" * 60)
-print("PurpleIO API Server - Phase 6 (auth enabled)")
+print("PurpleIO API Server - Phase 7 (auth + validation + CORS)")
 print("=" * 60)
 
 # ============================================
@@ -200,9 +209,10 @@ def status():
     return jsonify({
         "status": "ok",
         "message": "PurpleIO API online",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "websocket": "enabled",
-        "auth": "JWT (Phase 6) - roles: viewer / operator / admin",
+        "auth": "JWT - roles: viewer / operator / admin",
+        "validation": "Phase 7 - all route bodies validated",
     })
 
 

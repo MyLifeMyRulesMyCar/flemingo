@@ -157,6 +157,12 @@ env/
 *.seed
 *.pid.lock
 
+# Phase 7 TLS - private key must never be committed
+# certs/flemingo.crt is safe to distribute (it's a public cert) but
+# gitignoring the whole directory is simpler. Copy the .crt manually
+# to any browser/client that needs to trust it.
+certs/
+
 # Phase 6 auth - NEVER commit these
 # jwt_secret.key: random signing secret generated at first boot (0600)
 # users.json: hashed credentials, also generated at first boot (0600)

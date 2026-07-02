@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 # api/can_routes.py
-# REST endpoints for the CAN bus backend (core/can_manager.py).
-# Mirrors the shape of the reference project's can_routes.py, scoped
-# to what core/can_manager.py actually supports (no device registry
-# yet - that was deliberately left out of Phase 2 until validated on
-# hardware).
+# Phase 7: all route bodies and query params validated via api/validators.py.
+# ValidationError → 400. Manager errors (RuntimeError) → 400 or 500.
 
 from flask import Blueprint, jsonify, request
 from api.auth_decorators import require_role
+from api.validators import (
+    ValidationError, parse_body, parse_bool,
+    validate_can_bitrate, validate_can_crystal,
+    validate_can_id, validate_can_payload,
+    validate_count, require_fields,
+)
 
 can_api = Blueprint("can_api", __name__)
 
@@ -28,17 +31,22 @@ def get_status():
 @can_api.route("/api/can/connect", methods=["POST"])
 @require_role("operator")
 def connect():
-    """Body (optional): {"bitrate": 125000, "crystal": 8000000}"""
-    data = request.get_json(silent=True) or {}
-
-    if "bitrate" in data:
-        _can_manager.bitrate = int(data["bitrate"])
-    if "crystal" in data:
-        _can_manager.crystal = int(data["crystal"])
-
+    """Body (optional): {"bitrate": 125000, "crystal": 8000000}
+    bitrate: 125000 / 250000 / 500000 / 1000000
+    crystal: 8000000 / 16000000"""
     try:
+        data = parse_body(request)
+
+        if "bitrate" in data:
+            _can_manager.bitrate = validate_can_bitrate(data["bitrate"])
+        if "crystal" in data:
+            _can_manager.crystal = validate_can_crystal(data["crystal"])
+
         _can_manager.connect()
         return jsonify({"message": "CAN connected", "status": _can_manager.get_status()})
+
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
 
@@ -53,7 +61,11 @@ def disconnect():
 @can_api.route("/api/can/messages", methods=["GET"])
 @require_role("viewer")
 def get_messages():
-    count = int(request.args.get("count", 100))
+    """?count=N  — N must be 1–1000 (default 100)."""
+    try:
+        count = validate_count(request.args.get("count", 100))
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
     return jsonify({"messages": _can_manager.get_recent_messages(count)})
 
 
@@ -68,26 +80,22 @@ def clear_messages():
 @require_role("operator")
 def send():
     """Body: {"can_id": 291, "data": [1,2,3,4], "extended": false}
-    can_id and data entries may be given as ints or hex strings ("0x123")."""
-    data = request.get_json(silent=True) or {}
-
-    if "can_id" not in data or "data" not in data:
-        return jsonify({"error": "can_id and data required"}), 400
-
-    def to_int(v):
-        return int(v, 16) if isinstance(v, str) and v.lower().startswith("0x") else int(v)
-
+    can_id and data bytes may be decimal ints or hex strings ("0x123").
+    Standard frame: can_id 0x000–0x7FF.
+    Extended frame: can_id 0x00000000–0x1FFFFFFF (set extended=true)."""
     try:
-        can_id = to_int(data["can_id"])
-        payload = [to_int(b) for b in data["data"]]
-        extended = bool(data.get("extended", False))
+        data = parse_body(request)
+        require_fields(data, "can_id", "data")
 
-        if len(payload) > 8:
-            return jsonify({"error": "data must be <= 8 bytes"}), 400
+        extended = parse_bool(data.get("extended", False), "extended")
+        can_id   = validate_can_id(data["can_id"], extended)
+        payload  = validate_can_payload(data["data"])
 
         ok = _can_manager.send_message(can_id, payload, extended=extended)
         return jsonify({"success": ok, "can_id": can_id, "data": payload})
 
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
