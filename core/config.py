@@ -13,6 +13,8 @@
 import logging
 import os
 
+VERSION = "0.5.0"
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = os.path.join(

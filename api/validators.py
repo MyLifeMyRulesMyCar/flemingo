@@ -429,3 +429,24 @@ def validate_poll_interval_ms(value: Any) -> int:
             f"poll_interval_ms must be {_POLL_INTERVAL_MS_MIN}–{_POLL_INTERVAL_MS_MAX}ms, got {v}"
         )
     return v
+
+
+# ============================================================
+# Backup validators (Phase 9)
+# ============================================================
+_BACKUP_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def validate_backup_file(file_obj) -> bytes:
+    """
+    Validate an uploaded backup file: must be non-empty and ≤ 10 MB.
+    Returns the raw bytes or raises ValidationError.
+    """
+    data = file_obj.read()
+    if len(data) == 0:
+        raise ValidationError("Backup file is empty")
+    if len(data) > _BACKUP_MAX_BYTES:
+        raise ValidationError(
+            f"Backup file exceeds {_BACKUP_MAX_BYTES // 1024 // 1024} MB limit"
+        )
+    return data

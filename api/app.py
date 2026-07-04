@@ -43,9 +43,10 @@ from api.modbus_routes import modbus_api, set_modbus_manager
 from api.health_routes import health_api, set_managers
 from api.auth_routes import auth_api
 from core.auth_manager import init_auth_manager
-from core.config import load_reliability_config, load_mqtt_config
+from core.config import load_reliability_config, load_mqtt_config, VERSION
 from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
+from api.system_routes import system_api, set_system_managers
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ set_modbus_manager(modbus_manager)
 _mqtt_cfg = load_mqtt_config()
 _mgr = init_mqtt_manager(can_manager, modbus_manager, io_manager, state, _mqtt_cfg)
 set_mqtt_manager(_mgr)
+set_system_managers(io_manager, can_manager, modbus_manager, mqtt_manager=_mgr)
 set_managers(io_manager, can_manager, modbus_manager, watchdog=daemon.watchdog)
 
 app.register_blueprint(io_api)
@@ -117,9 +119,10 @@ app.register_blueprint(modbus_api)
 app.register_blueprint(health_api)
 app.register_blueprint(auth_api)
 app.register_blueprint(mqtt_api)
+app.register_blueprint(system_api)
 
 print("=" * 60)
-print("PurpleIO API Server - Phase 8 (auth + validation + MQTT bridges)")
+print("PurpleIO API Server - Phase 9 (auth + validation + MQTT + backup/system)")
 print("=" * 60)
 
 # ============================================
@@ -221,11 +224,12 @@ def status():
     return jsonify({
         "status": "ok",
         "message": "PurpleIO API online",
-        "version": "0.4.0",
+        "version": VERSION,
         "websocket": "enabled",
         "auth": "JWT - roles: viewer / operator / admin",
         "validation": "Phase 7 - all route bodies validated",
         "mqtt": "Phase 8 - CAN / Modbus / IO bridges (POST /api/mqtt/connect to activate)",
+        "backup": "Phase 9 - GET /api/system/backup, POST /api/system/restore",
     })
 
 
