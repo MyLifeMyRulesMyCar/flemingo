@@ -170,3 +170,6 @@ certs/
 # admin bootstrap fires again on next start.
 config/jwt_secret.key
 config/users.json
+-e 
+# Phase 8 MQTT - may contain broker credentials
+config/mqtt.yaml

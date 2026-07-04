@@ -14,3 +14,4 @@ requests
 pyyaml     
 psutil
 pyjwt 
+paho-mqtt>=1.6.1

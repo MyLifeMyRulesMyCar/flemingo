@@ -340,3 +340,92 @@ def validate_device_name(value: Any) -> str:
             "(only letters, digits, spaces, hyphens, underscores, dots allowed)"
         )
     return v
+
+
+# ============================================================
+# MQTT validators (Phase 8)
+# ============================================================
+_MQTT_TOPIC_MAX_LEN = 128
+_MQTT_PORT_MIN      = 1
+_MQTT_PORT_MAX      = 65535
+_POLL_INTERVAL_S_MIN   = 0.5
+_POLL_INTERVAL_S_MAX   = 3600.0
+_POLL_INTERVAL_MS_MIN  = 10
+_POLL_INTERVAL_MS_MAX  = 10_000
+
+
+def validate_mqtt_host(value: Any) -> str:
+    """Non-empty hostname or IP address, max 253 chars, no spaces."""
+    if not isinstance(value, str):
+        raise ValidationError(f"MQTT host must be a string, got {type(value).__name__}")
+    v = value.strip()
+    if not v:
+        raise ValidationError("MQTT host must not be empty")
+    if len(v) > 253:
+        raise ValidationError(f"MQTT host must be ≤ 253 characters, got {len(v)}")
+    if " " in v:
+        raise ValidationError("MQTT host must not contain spaces")
+    return v
+
+
+def validate_mqtt_port(value: Any) -> int:
+    """TCP port: 1–65535."""
+    v = parse_int(value, "port")
+    if not (_MQTT_PORT_MIN <= v <= _MQTT_PORT_MAX):
+        raise ValidationError(
+            f"MQTT port must be {_MQTT_PORT_MIN}–{_MQTT_PORT_MAX}, got {v}"
+        )
+    return v
+
+
+def validate_mqtt_topic(value: Any) -> str:
+    """
+    MQTT topic string: non-empty, ≤128 chars.
+    Allows + and # wildcards for subscription templates.
+    Rejects null bytes and leading/trailing whitespace.
+    """
+    if not isinstance(value, str):
+        raise ValidationError(f"MQTT topic must be a string, got {type(value).__name__}")
+    v = value.strip()
+    if not v:
+        raise ValidationError("MQTT topic must not be empty")
+    if len(v) > _MQTT_TOPIC_MAX_LEN:
+        raise ValidationError(
+            f"MQTT topic must be ≤ {_MQTT_TOPIC_MAX_LEN} characters, got {len(v)}"
+        )
+    if "\x00" in v:
+        raise ValidationError("MQTT topic must not contain null bytes")
+    return v
+
+
+def validate_mqtt_qos(value: Any) -> int:
+    """MQTT Quality of Service: 0, 1, or 2."""
+    v = parse_int(value, "qos")
+    if v not in (0, 1, 2):
+        raise ValidationError(f"MQTT QoS must be 0, 1, or 2, got {v}")
+    return v
+
+
+def validate_poll_interval_s(value: Any) -> float:
+    """Poll interval in seconds: 0.5–3600."""
+    if isinstance(value, bool):
+        raise ValidationError("poll_interval_s must be a number, got boolean")
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValidationError(f"poll_interval_s must be a number, got {value!r}")
+    if not (_POLL_INTERVAL_S_MIN <= v <= _POLL_INTERVAL_S_MAX):
+        raise ValidationError(
+            f"poll_interval_s must be {_POLL_INTERVAL_S_MIN}–{_POLL_INTERVAL_S_MAX}s, got {v}"
+        )
+    return v
+
+
+def validate_poll_interval_ms(value: Any) -> int:
+    """Poll interval in milliseconds: 10–10000."""
+    v = parse_int(value, "poll_interval_ms")
+    if not (_POLL_INTERVAL_MS_MIN <= v <= _POLL_INTERVAL_MS_MAX):
+        raise ValidationError(
+            f"poll_interval_ms must be {_POLL_INTERVAL_MS_MIN}–{_POLL_INTERVAL_MS_MAX}ms, got {v}"
+        )
+    return v

@@ -43,7 +43,9 @@ from api.modbus_routes import modbus_api, set_modbus_manager
 from api.health_routes import health_api, set_managers
 from api.auth_routes import auth_api
 from core.auth_manager import init_auth_manager
-from core.config import load_reliability_config
+from core.config import load_reliability_config, load_mqtt_config
+from core.mqtt_manager import init_mqtt_manager
+from api.mqtt_routes import mqtt_api, set_mqtt_manager
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,15 @@ daemon = PurpleIODaemon(io_manager, poll_interval=0.1,
 set_io_manager(io_manager)
 set_can_manager(can_manager)
 set_modbus_manager(modbus_manager)
+
+# ============================================
+# MQTT bridge (Phase 8)
+# All three bridges share one paho client. Not connected to a broker
+# yet — operator calls POST /api/mqtt/connect to do that.
+# ============================================
+_mqtt_cfg = load_mqtt_config()
+_mgr = init_mqtt_manager(can_manager, modbus_manager, io_manager, state, _mqtt_cfg)
+set_mqtt_manager(_mgr)
 set_managers(io_manager, can_manager, modbus_manager, watchdog=daemon.watchdog)
 
 app.register_blueprint(io_api)
@@ -105,9 +116,10 @@ app.register_blueprint(can_api)
 app.register_blueprint(modbus_api)
 app.register_blueprint(health_api)
 app.register_blueprint(auth_api)
+app.register_blueprint(mqtt_api)
 
 print("=" * 60)
-print("PurpleIO API Server - Phase 7 (auth + validation + CORS)")
+print("PurpleIO API Server - Phase 8 (auth + validation + MQTT bridges)")
 print("=" * 60)
 
 # ============================================
@@ -209,10 +221,11 @@ def status():
     return jsonify({
         "status": "ok",
         "message": "PurpleIO API online",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "websocket": "enabled",
         "auth": "JWT - roles: viewer / operator / admin",
         "validation": "Phase 7 - all route bodies validated",
+        "mqtt": "Phase 8 - CAN / Modbus / IO bridges (POST /api/mqtt/connect to activate)",
     })
 
 
@@ -228,6 +241,15 @@ def signal_handler(sig, frame):
         pass
     try:
         modbus_manager._stop_health_check()
+    except Exception:
+        pass
+    try:
+        from core.mqtt_manager import mqtt_manager as _mm
+        if _mm:
+            for b in (_mm.can_bridge, _mm.modbus_bridge, _mm.io_bridge):
+                if b and b.running:
+                    b.stop()
+            _mm.disconnect()
     except Exception:
         pass
     sys.exit(0)

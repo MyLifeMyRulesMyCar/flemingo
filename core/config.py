@@ -84,3 +84,92 @@ def load_reliability_config(path: str = None, force_reload: bool = False) -> dic
 
     _cache = _deep_merge(DEFAULTS, loaded)
     return _cache
+
+
+# ─── MQTT config ─────────────────────────────────────────────────────
+_MQTT_DEFAULT_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "config", "mqtt.yaml",
+)
+
+_MQTT_DEFAULTS = {
+    "broker": {
+        "host": "127.0.0.1",
+        "port": 1883,
+        "client_id": "flemingo-edge-01",
+        "username": "",
+        "password": "",
+        "keepalive": 60,
+    },
+    "bridges": {
+        "prefix": "flemingo",
+        "device_id": "edge-01",
+        "can": {
+            "publish_topic": "{prefix}/{device_id}/can/rx",
+            "subscribe_topic": "{prefix}/{device_id}/can/tx",
+            "qos": 0,
+        },
+        "modbus": {
+            "poll_interval_s": 5,
+            "publish_topic_template": "{prefix}/{device_id}/modbus/{dev_id}/r{address}",
+            "subscribe_topic_template": "{prefix}/{device_id}/modbus/+/set",
+            "qos": 1,
+            "registers": [],
+        },
+        "io": {
+            "poll_interval_ms": 100,
+            "publish_on_change": True,
+            "publish_topic_di": "{prefix}/{device_id}/io/di/{channel}",
+            "subscribe_topic_do": "{prefix}/{device_id}/io/do/+/set",
+            "qos": 1,
+        },
+    },
+}
+
+_mqtt_cache = None
+
+
+def load_mqtt_config(path=None, force_reload=False):
+    """
+    Load config/mqtt.yaml and merge with built-in defaults.
+    Resolves {prefix} and {device_id} in all topic strings so bridges
+    receive ready-to-use topic strings, not raw templates.
+    Never raises — missing file falls back to defaults silently.
+    """
+    global _mqtt_cache
+    if _mqtt_cache is not None and not force_reload:
+        return _mqtt_cache
+
+    path = path or _MQTT_DEFAULT_CONFIG_PATH
+    loaded = {}
+
+    if os.path.exists(path):
+        try:
+            import yaml
+            with open(path, "r") as f:
+                loaded = yaml.safe_load(f) or {}
+        except ImportError:
+            logger.warning("PyYAML not installed - using built-in MQTT defaults")
+        except Exception as e:
+            logger.warning(f"Could not parse {path} ({e}) - using MQTT defaults")
+    else:
+        logger.info(f"No MQTT config at {path} - using built-in defaults")
+
+    merged = _deep_merge(_MQTT_DEFAULTS, loaded)
+
+    # Resolve {prefix} and {device_id} in every topic string
+    prefix    = merged["bridges"]["prefix"]
+    device_id = merged["bridges"]["device_id"]
+
+    def _resolve(v):
+        if isinstance(v, str):
+            return v.replace("{prefix}", prefix).replace("{device_id}", device_id)
+        return v
+
+    for bridge in ("can", "modbus", "io"):
+        cfg = merged["bridges"][bridge]
+        for k, v in cfg.items():
+            cfg[k] = _resolve(v)
+
+    _mqtt_cache = merged
+    return _mqtt_cache
