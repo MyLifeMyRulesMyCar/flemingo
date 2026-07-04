@@ -55,20 +55,6 @@ export default function Overview() {
     };
   }, []);
 
-  useEffect(() => {
-    const poll = () => {
-      apiGet("/api/io")
-        .then((r) => r.json())
-        .then((d) => {
-          setDi(d.di || []);
-          setDo(d.do || []);
-        })
-        .catch(() => {});
-    };
-    const t = setInterval(poll, 500);
-    return () => clearInterval(t);
-  }, []);
-
   const canOk = health?.can?.connected;
   const modbusOk = (health?.modbus?.connected_count || 0) > 0;
   const watchdogOk = health?.watchdog?.alive;

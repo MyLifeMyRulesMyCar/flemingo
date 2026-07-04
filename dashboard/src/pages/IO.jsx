@@ -10,6 +10,11 @@ export default function IO() {
   const { showToast } = useToast();
   const [di, setDi] = useState([]);
   const [do_, setDo] = useState([]);
+  const [lastDi, setLastDi] = useState([]);
+  const [lastDo, setLastDo] = useState([]);
+  const [changes, setChanges] = useState({});
+
+  const now = () => new Date().toLocaleTimeString();
 
   useEffect(() => {
     apiGet("/api/io")
@@ -17,6 +22,8 @@ export default function IO() {
       .then((d) => {
         setDi(d.di || []);
         setDo(d.do || []);
+        setLastDi(d.di || []);
+        setLastDo(d.do || []);
       })
       .catch(() => {});
   }, []);
@@ -25,24 +32,32 @@ export default function IO() {
     const sock = getSocket();
     if (!sock) return;
     sock.on("io_update", (data) => {
-      setDi(data.di || []);
-      setDo(data.do || []);
+      const newDi = data.di || [];
+      const newDo = data.do || [];
+      setDi(newDi);
+      setDo(newDo);
+      setLastDi((prev) => {
+        setChanges((ch) => {
+          const next = { ...ch };
+          for (let i = 0; i < newDi.length; i++) {
+            if (newDi[i] !== prev[i]) next[`di-${i}`] = now();
+          }
+          return next;
+        });
+        return newDi;
+      });
+      setLastDo((prev) => {
+        setChanges((ch) => {
+          const next = { ...ch };
+          for (let i = 0; i < newDo.length; i++) {
+            if (newDo[i] !== prev[i]) next[`do-${i}`] = now();
+          }
+          return next;
+        });
+        return newDo;
+      });
     });
     return () => sock.off("io_update");
-  }, []);
-
-  useEffect(() => {
-    const poll = () => {
-      apiGet("/api/io")
-        .then((r) => r.json())
-        .then((d) => {
-          setDi(d.di || []);
-          setDo(d.do || []);
-        })
-        .catch(() => {});
-    };
-    const t = setInterval(poll, 500);
-    return () => clearInterval(t);
   }, []);
 
   const toggleDO = async (ch) => {
@@ -54,6 +69,7 @@ export default function IO() {
         setDo((prev) => {
           const next = [...prev];
           next[ch] = data.value;
+          setChanges((c) => ({ ...c, [`do-${ch}`]: now() }));
           return next;
         });
         showToast(`DO${ch} set to ${newVal ? "ON" : "OFF"}`, "success");
@@ -81,11 +97,11 @@ export default function IO() {
             <div className="io-cell" key={`di-${ch}`}>
               <div className="io-label">DI{ch}</div>
               <StatusLed status={di[ch] ? "ok" : "off"} pulse={!!di[ch]} />
-              <div
-                className="io-value"
-                style={{ color: di[ch] ? "var(--status-ok)" : "var(--status-off)" }}
-              >
+              <div className="io-value" style={{ color: di[ch] ? "var(--status-ok)" : "var(--status-off)" }}>
                 {di[ch] ? "HIGH" : "LOW"}
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
+                {changes[`di-${ch}`] || "—"}
               </div>
             </div>
           ))}
@@ -106,6 +122,9 @@ export default function IO() {
               >
                 {do_[ch] ? "ON" : "OFF"}
               </button>
+              <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
+                {changes[`do-${ch}`] || "—"}
+              </div>
             </div>
           ))}
         </div>

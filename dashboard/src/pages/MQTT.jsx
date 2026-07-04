@@ -16,6 +16,13 @@ export default function MQTT() {
   const [modNewAddr, setModNewAddr] = useState(0);
   const [modNewFc, setModNewFc] = useState(3);
 
+  const [canPubTopic, setCanPubTopic] = useState("flemingo/edge-01/can/rx");
+  const [canSubTopic, setCanSubTopic] = useState("flemingo/edge-01/can/tx");
+  const [canQos, setCanQos] = useState(0);
+
+  const [ioPollMs, setIoPollMs] = useState(100);
+  const [ioPublishOnChange, setIoPublishOnChange] = useState(false);
+
   const isOperator = role === "operator" || role === "admin";
   const isAdmin = role === "admin";
 
@@ -28,6 +35,17 @@ export default function MQTT() {
       if (mb) {
         if (mb.registers?.length) setModRegs(mb.registers);
         if (mb.poll_interval_s) setModPoll(mb.poll_interval_s);
+      }
+      const cb = d.bridges?.can;
+      if (cb) {
+        if (cb.publish_topic) setCanPubTopic(cb.publish_topic);
+        if (cb.subscribe_topic) setCanSubTopic(cb.subscribe_topic);
+        if (cb.qos !== undefined) setCanQos(cb.qos);
+      }
+      const ib = d.bridges?.io;
+      if (ib) {
+        if (ib.poll_interval_ms) setIoPollMs(ib.poll_interval_ms);
+        if (ib.publish_on_change !== undefined) setIoPublishOnChange(ib.publish_on_change);
       }
     } catch {}
   };
@@ -106,9 +124,21 @@ export default function MQTT() {
 
   const startIOBridge = async () => {
     const r = await apiPost("/api/mqtt/bridges/io/start", {
-      publish_on_change: false,
+      poll_interval_ms: ioPollMs,
+      publish_on_change: ioPublishOnChange,
     });
     if (r.ok) showToast("IO bridge started", "success");
+    else showToast((await r.json()).error || "Failed", "error");
+    fetchStatus();
+  };
+
+  const updateCANConfig = async () => {
+    const r = await apiPost("/api/mqtt/bridges/can/config", {
+      publish_topic: canPubTopic,
+      subscribe_topic: canSubTopic,
+      qos: canQos,
+    });
+    if (r.ok) showToast("CAN config updated", "success");
     else showToast((await r.json()).error || "Failed", "error");
     fetchStatus();
   };
@@ -151,6 +181,27 @@ export default function MQTT() {
               disabled={!isOperator}
             />
           </div>
+          <div className="form-row">
+            <label>Username</label>
+            <input
+              placeholder="(none)"
+              value={broker.username}
+              onChange={(e) => setBroker({ ...broker, username: e.target.value })}
+              style={{ width: 120 }}
+              disabled={!isOperator}
+            />
+          </div>
+          <div className="form-row">
+            <label>Password</label>
+            <input
+              type="password"
+              placeholder="(none)"
+              value={broker.password}
+              onChange={(e) => setBroker({ ...broker, password: e.target.value })}
+              style={{ width: 120 }}
+              disabled={!isOperator}
+            />
+          </div>
           {isOperator && (
             <>
               <button className="btn-primary" onClick={handleConnect}>
@@ -176,12 +227,19 @@ export default function MQTT() {
       </div>
 
       <div className="bridge-grid">
-        <BridgeCard
-          title="CAN Bridge"
+        <CANBridgeCard
           status={bridges.can}
+          pubTopic={canPubTopic}
+          subTopic={canSubTopic}
+          qos={canQos}
+          onPubTopicChange={setCanPubTopic}
+          onSubTopicChange={setCanSubTopic}
+          onQosChange={setCanQos}
           onStart={() => bridgeOp("/api/mqtt/bridges/can/start")}
           onStop={() => bridgeOp("/api/mqtt/bridges/can/stop")}
+          onConfig={updateCANConfig}
           isOperator={isOperator}
+          isAdmin={isAdmin}
         />
 
         <ModbusBridgeCard
@@ -202,9 +260,12 @@ export default function MQTT() {
           onPollChange={setModPoll}
         />
 
-        <BridgeCard
-          title="IO Bridge"
+        <IOBridgeCard
           status={bridges.io}
+          pollMs={ioPollMs}
+          publishOnChange={ioPublishOnChange}
+          onPollMsChange={setIoPollMs}
+          onPublishOnChangeChange={setIoPublishOnChange}
           onStart={startIOBridge}
           onStop={() => bridgeOp("/api/mqtt/bridges/io/stop")}
           isOperator={isOperator}
@@ -214,41 +275,97 @@ export default function MQTT() {
   );
 }
 
-function BridgeCard({ title, status, onStart, onStop, isOperator }) {
+function CANBridgeCard({
+  status, pubTopic, subTopic, qos,
+  onPubTopicChange, onSubTopicChange, onQosChange,
+  onStart, onStop, onConfig,
+  isOperator, isAdmin,
+}) {
   const s = status || {};
   const st = s.stats || {};
   return (
     <div className="card">
       <div className="card-header">
-        {title}
-        <StatusLed
-          status={s.running ? "ok" : "off"}
-          label={s.running ? "Running" : "Stopped"}
-        />
+        CAN Bridge
+        <StatusLed status={s.running ? "ok" : "off"} label={s.running ? "Running" : "Stopped"} />
       </div>
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-          <button
-            className="btn-primary"
-            style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart}
-            disabled={s.running}
-          >
-            Start
-          </button>
-          <button
-            className="btn-default"
-            style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStop}
-            disabled={!s.running}
-          >
-            Stop
-          </button>
+          <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStart} disabled={s.running}>Start</button>
+          <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStop} disabled={!s.running}>Stop</button>
         </div>
       )}
+      <div className="form-row">
+        <label>Publish Topic</label>
+        <input value={pubTopic} onChange={(e) => onPubTopicChange(e.target.value)}
+          disabled={!isAdmin || s.running} style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }} />
+      </div>
+      <div className="form-row">
+        <label>Subscribe Topic</label>
+        <input value={subTopic} onChange={(e) => onSubTopicChange(e.target.value)}
+          disabled={!isAdmin || s.running} style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }} />
+      </div>
+      <div className="form-row">
+        <label>QoS</label>
+        <select value={qos} onChange={(e) => onQosChange(Number(e.target.value))} disabled={!isAdmin || s.running}>
+          <option value={0}>0 — At most once</option>
+          <option value={1}>1 — At least once</option>
+          <option value={2}>2 — Exactly once</option>
+        </select>
+      </div>
+      {isAdmin && (
+        <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px", marginBottom: "12px" }}
+          onClick={onConfig} disabled={s.running}>Apply Config</button>
+      )}
       <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-        <div>Published: {st.published ?? st.di_published ?? 0}</div>
-        <div>Received: {st.received ?? st.do_received ?? 0}</div>
+        <div>Published: {st.published ?? 0}</div>
+        <div>Received: {st.received ?? 0}</div>
+        <div>Errors: {st.errors ?? 0}</div>
+      </div>
+    </div>
+  );
+}
+
+function IOBridgeCard({
+  status, pollMs, publishOnChange,
+  onPollMsChange, onPublishOnChangeChange,
+  onStart, onStop, isOperator,
+}) {
+  const s = status || {};
+  const st = s.stats || {};
+  return (
+    <div className="card">
+      <div className="card-header">
+        IO Bridge
+        <StatusLed status={s.running ? "ok" : "off"} label={s.running ? "Running" : "Stopped"} />
+      </div>
+      {isOperator && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+          <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStart} disabled={s.running}>Start</button>
+          <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStop} disabled={!s.running}>Stop</button>
+        </div>
+      )}
+      <div className="form-row">
+        <label>Poll interval (ms)</label>
+        <input type="number" value={pollMs} onChange={(e) => onPollMsChange(Number(e.target.value))}
+          style={{ width: 80 }} min={10} max={10000} disabled={!isOperator || s.running} />
+      </div>
+      <div className="form-row" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <label style={{ marginBottom: 0 }}>Publish on change</label>
+        <div className="toggle-switch">
+          <input type="checkbox" checked={publishOnChange}
+            onChange={(e) => onPublishOnChangeChange(e.target.checked)}
+            disabled={!isOperator || s.running} />
+          <span className="slider" />
+        </div>
+      </div>
+      <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+        <div>Published: {st.di_published ?? 0}</div>
+        <div>Received: {st.do_received ?? 0}</div>
         <div>Errors: {st.errors ?? 0}</div>
       </div>
     </div>
@@ -256,149 +373,54 @@ function BridgeCard({ title, status, onStart, onStop, isOperator }) {
 }
 
 function ModbusBridgeCard({
-  status,
-  registers,
-  pollInterval,
-  onAddRow,
-  onRemoveRow,
-  onStart,
-  onStop,
-  isOperator,
-  newDev,
-  onNewDevChange,
-  newAddr,
-  onNewAddrChange,
-  newFc,
-  onNewFcChange,
-  onPollChange,
+  status, registers, pollInterval,
+  onAddRow, onRemoveRow, onStart, onStop, isOperator,
+  newDev, onNewDevChange, newAddr, onNewAddrChange, newFc, onNewFcChange, onPollChange,
 }) {
   const s = status || {};
   const st = s.stats || {};
   const isRunning = s.running;
-
   return (
     <div className="card">
       <div className="card-header">
         Modbus Bridge
-        <StatusLed
-          status={isRunning ? "ok" : "off"}
-          label={isRunning ? "Running" : "Stopped"}
-        />
+        <StatusLed status={isRunning ? "ok" : "off"} label={isRunning ? "Running" : "Stopped"} />
       </div>
-
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-          <button
-            className="btn-primary"
-            style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart}
-            disabled={false}
-          >
-            {isRunning ? "Apply" : "Start"}
-          </button>
-          <button
-            className="btn-default"
-            style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStop}
-            disabled={!isRunning}
-          >
-            Stop
-          </button>
+          <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStart} disabled={false}>{isRunning ? "Apply" : "Start"}</button>
+          <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
+            onClick={onStop} disabled={!isRunning}>Stop</button>
         </div>
       )}
-
       <div className="form-row">
         <label>Poll interval (seconds)</label>
-        <input
-          type="number"
-          value={pollInterval}
-          onChange={(e) => onPollChange(Number(e.target.value))}
-          style={{ width: 80 }}
-          min={1}
-          max={3600}
-          disabled={!isOperator || isRunning}
-        />
+        <input type="number" value={pollInterval} onChange={(e) => onPollChange(Number(e.target.value))}
+          style={{ width: 80 }} min={1} max={3600} disabled={!isOperator || isRunning} />
       </div>
-
-      <div className="form-row">
-        <label>Registers ({registers.length})</label>
-      </div>
-
+      <div className="form-row"><label>Registers ({registers.length})</label></div>
       <table className="data-table" style={{ marginBottom: "10px" }}>
-        <thead>
-          <tr>
-            <th>Device ID</th>
-            <th>Address</th>
-            <th>FC</th>
-            <th></th>
-          </tr>
-        </thead>
+        <thead><tr><th>Device ID</th><th>Address</th><th>FC</th><th></th></tr></thead>
         <tbody>
           {registers.map((reg, idx) => (
             <tr key={idx}>
               <td style={{ fontFamily: "var(--font-sans)" }}>{reg.device_id}</td>
-              <td>{reg.address}</td>
-              <td>FC{reg.function_code}</td>
-              <td>
-                {isOperator && (
-                  <button
-                    className="btn-danger"
-                    style={{ padding: "2px 8px", fontSize: "11px" }}
-                    onClick={() => onRemoveRow(idx)}
-                  >
-                    Del
-                  </button>
-                )}
-              </td>
+              <td>{reg.address}</td><td>FC{reg.function_code}</td>
+              <td>{isOperator && <button className="btn-danger" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => onRemoveRow(idx)}>Del</button>}</td>
             </tr>
           ))}
-          {registers.length === 0 && (
-            <tr>
-              <td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)" }}>
-                No registers configured
-              </td>
-            </tr>
-          )}
+          {registers.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)" }}>No registers configured</td></tr>}
         </tbody>
       </table>
-
       {isOperator && (
         <div className="form-inline" style={{ marginBottom: "8px" }}>
-          <div className="form-row">
-            <label>Device</label>
-            <input
-              placeholder="dev1"
-              value={newDev}
-              onChange={(e) => onNewDevChange(e.target.value)}
-              style={{ width: 100 }}
-            />
-          </div>
-          <div className="form-row">
-            <label>Addr</label>
-            <input
-              type="number"
-              value={newAddr}
-              onChange={(e) => onNewAddrChange(Number(e.target.value))}
-              style={{ width: 70 }}
-              min={0}
-              max={65535}
-            />
-          </div>
-          <div className="form-row">
-            <label>FC</label>
-            <select value={newFc} onChange={(e) => onNewFcChange(Number(e.target.value))}>
-              <option value={1}>FC1</option>
-              <option value={2}>FC2</option>
-              <option value={3}>FC3</option>
-              <option value={4}>FC4</option>
-            </select>
-          </div>
-          <button className="btn-primary" style={{ padding: "8px 14px", fontSize: "12px" }} onClick={onAddRow}>
-            Add
-          </button>
+          <div className="form-row"><label>Device</label><input placeholder="dev1" value={newDev} onChange={(e) => onNewDevChange(e.target.value)} style={{ width: 100 }} /></div>
+          <div className="form-row"><label>Addr</label><input type="number" value={newAddr} onChange={(e) => onNewAddrChange(Number(e.target.value))} style={{ width: 70 }} min={0} max={65535} /></div>
+          <div className="form-row"><label>FC</label><select value={newFc} onChange={(e) => onNewFcChange(Number(e.target.value))}><option value={1}>FC1</option><option value={2}>FC2</option><option value={3}>FC3</option><option value={4}>FC4</option></select></div>
+          <button className="btn-primary" style={{ padding: "8px 14px", fontSize: "12px" }} onClick={onAddRow}>Add</button>
         </div>
       )}
-
       <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
         <div>Published: {st.published ?? 0}</div>
         <div>Received: {st.received ?? 0}</div>

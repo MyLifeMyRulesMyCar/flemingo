@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { apiGet, apiPost } from "../api/client.js";
 import { getSocket } from "../api/socket.js";
@@ -16,7 +16,6 @@ export default function CAN() {
   const [canId, setCanId] = useState("");
   const [dataHex, setDataHex] = useState("");
   const [extended, setExtended] = useState(false);
-  const logEndRef = useRef(null);
   const isOperator = role === "operator" || role === "admin";
 
   const fetchStatus = async () => {
@@ -38,11 +37,6 @@ export default function CAN() {
     });
     return () => sock.off("can_message");
   }, []);
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   const handleConnect = async () => {
     const r = await apiPost("/api/can/connect", { bitrate });
     const d = await r.json();
@@ -199,7 +193,6 @@ export default function CAN() {
               <span className="log-ext">{m.extended ? "EXT" : ""}</span>
             </div>
           ))}
-          <div ref={logEndRef} />
         </div>
       </div>
     </div>

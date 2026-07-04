@@ -38,6 +38,9 @@ export default function Sidebar() {
         <div className="logout-link" onClick={logout}>
           Logout
         </div>
+        <div className="logout-icon" onClick={logout} title="Logout">
+          ⇥
+        </div>
       </div>
     </aside>
   );

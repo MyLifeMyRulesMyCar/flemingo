@@ -80,6 +80,8 @@
   margin-top: 4px;
 }
 .sidebar-footer .logout-link:hover { color: var(--status-err); }
+.sidebar-footer .logout-icon { display: none; font-size: 14px; cursor: pointer; }
+.sidebar-footer .logout-icon:hover { color: var(--status-err); }
 
 .main-content {
   overflow-y: auto;
@@ -104,7 +106,9 @@
   .sidebar-brand h1, .sidebar-brand span { display: none; }
   .sidebar-nav a { justify-content: center; padding: 10px 0; }
   .sidebar-nav .nav-label { display: none; }
-  .sidebar-footer .user-info, .sidebar-footer .logout-link { display: none; }
+  .sidebar-footer .user-info { display: none; }
+  .sidebar-footer .logout-link { display: none; }
+  .sidebar-footer .logout-icon { display: block; padding: 8px 0; text-align: center; }
   .sidebar-footer .role-badge { font-size: 0; padding: 4px; }
   .sidebar-footer .role-badge::first-letter { font-size: 10px; }
   .sidebar { padding: 8px 0; }

@@ -43,6 +43,8 @@ from api.modbus_routes import modbus_api, set_modbus_manager
 from api.health_routes import health_api, set_managers
 from api.auth_routes import auth_api
 from core.auth_manager import init_auth_manager
+from core.auth_manager import role_at_least as _role_at_least
+from core import auth_manager as auth_manager_module
 from core.config import load_reliability_config, load_mqtt_config, VERSION
 from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
@@ -155,17 +157,37 @@ def broadcast_can_message(message):
 can_manager.subscribe(broadcast_can_message)
 
 # ============================================
-# WebSocket events
+# WebSocket events — Phase 10 security: JWT validated on connect,
+# role checked on actuation commands.
 # ============================================
+_ws_auth = {}  # sid → decoded JWT payload
+
 @socketio.on("connect")
-def handle_connect():
-    logger.info("WebSocket: client connected")
+def handle_connect(auth=None):
+    token = auth.get("token") if auth else None
+    if not token:
+        logger.warning("WebSocket: rejected — missing auth token")
+        return False
+
+    mgr = auth_manager_module.auth_manager
+    if mgr is None:
+        mgr = auth_manager_module.init_auth_manager()
+
+    try:
+        payload = mgr.verify_token(token, expected_type="access")
+    except Exception as e:
+        logger.warning(f"WebSocket: rejected — invalid token: {e}")
+        return False
+
+    _ws_auth[request.sid] = payload
+    logger.info(f"WebSocket: client connected (role={payload.get('role','?')})")
     emit("io_update", {"di": state.get_di(), "do": state.get_do()})
     emit("can_status", can_manager.get_status())
 
 
 @socketio.on("disconnect")
 def handle_disconnect():
+    _ws_auth.pop(request.sid, None)
     logger.info("WebSocket: client disconnected")
 
 
@@ -176,6 +198,12 @@ def handle_request_io():
 
 @socketio.on("set_do")
 def handle_set_do(data):
+    payload = _ws_auth.get(request.sid, {})
+    role = payload.get("role", "")
+    if not _role_at_least(role, "operator"):
+        emit("error", {"message": "Operator role required"})
+        return
+
     ch = data.get("channel")
     value = data.get("value")
 

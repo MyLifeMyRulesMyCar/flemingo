@@ -13,6 +13,7 @@ export default function System() {
   const [restartBanner, setRestartBanner] = useState(false);
   const [newUser, setNewUser] = useState({ username: "", password: "", role: "viewer" });
   const [delUser, setDelUser] = useState(null);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const fileRef = useRef(null);
   const isAdmin = role === "admin";
 
@@ -53,6 +54,7 @@ export default function System() {
   };
 
   const handleRestore = async () => {
+    setShowRestoreConfirm(false);
     const file = fileRef.current?.files?.[0];
     if (!file) { showToast("Select a backup zip first", "error"); return; }
     const fd = new FormData();
@@ -138,7 +140,13 @@ export default function System() {
           <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <button className="btn-primary" onClick={handleBackup}>Download Backup</button>
             <input type="file" accept=".zip" ref={fileRef} />
-            <button className="btn-primary" onClick={handleRestore}>Restore Config</button>
+            <button className="btn-primary" onClick={() => {
+              if (!fileRef.current?.files?.[0]) {
+                showToast("Select a backup zip first", "error");
+                return;
+              }
+              setShowRestoreConfirm(true);
+            }}>Restore Config</button>
           </div>
         </div>
       )}
@@ -174,13 +182,16 @@ export default function System() {
 
           <table className="data-table">
             <thead>
-              <tr><th>Username</th><th>Role</th><th></th></tr>
+              <tr><th>Username</th><th>Role</th><th>Created</th><th></th></tr>
             </thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.username}>
                   <td style={{ fontFamily: "var(--font-sans)" }}>{u.username}</td>
                   <td>{u.role}</td>
+                  <td style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}>
+                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                  </td>
                   <td>
                     <button className="btn-danger" style={{ padding: "2px 8px", fontSize: "11px" }}
                       onClick={() => setDelUser(u.username)}>Delete</button>
@@ -199,6 +210,14 @@ export default function System() {
         danger
         onConfirm={handleDeleteUser}
         onCancel={() => setDelUser(null)} />
+
+      <ConfirmModal isOpen={showRestoreConfirm}
+        title="Restore Configuration?"
+        message="This overwrites reliability.yaml, mqtt.yaml, and users.json. A restart is required after restore. Continue?"
+        confirmLabel="Restore"
+        danger
+        onConfirm={handleRestore}
+        onCancel={() => setShowRestoreConfirm(false)} />
     </div>
   );
 }
