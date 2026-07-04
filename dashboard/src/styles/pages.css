@@ -1,0 +1,158 @@
+.login-page {
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-base);
+}
+.login-card {
+  background: var(--bg-card);
+  border: 1px solid #30363d;
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  width: 100%;
+  max-width: 400px;
+}
+.login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.login-brand h1 {
+  font-size: 24px;
+  color: var(--accent);
+  letter-spacing: 3px;
+}
+.login-brand span {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.login-error {
+  background: #3a1a1a;
+  border: 1px solid var(--status-err);
+  color: var(--status-err);
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  margin-top: 8px;
+}
+
+.login-card input {
+  width: 100%;
+}
+
+/* Overview */
+.overview-header {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.overview-header .info-chip {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.overview-header .info-chip strong {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.status-pills-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.io-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.io-cell {
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid #21262d;
+  border-radius: var(--radius-lg);
+}
+.io-cell .io-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+.io-cell .io-value {
+  font-size: 24px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+/* CAN */
+.can-log {
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: #0a0d12;
+  border: 1px solid #21262d;
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.can-log .log-row {
+  padding: 3px 0;
+  border-bottom: 1px solid #11151b;
+  display: grid;
+  grid-template-columns: 80px 60px 30px 1fr 30px;
+  gap: 8px;
+}
+.can-log .log-row .log-time { color: var(--text-muted); }
+.can-log .log-row .log-id { color: var(--accent); }
+.can-log .log-row .log-dlc { color: var(--text-muted); }
+.can-log .log-row .log-data { color: var(--text-primary); }
+.can-log .log-row .log-ext { color: var(--status-warn); }
+
+/* Modbus */
+.device-table { margin-bottom: 16px; }
+.read-result {
+  padding: 12px;
+  background: #11151b;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 18px;
+  margin-top: 8px;
+  color: var(--accent);
+}
+.form-inline {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.form-inline .form-row { margin-bottom: 0; }
+
+/* System */
+.restart-banner {
+  background: #1a3a1a;
+  border: 1px solid var(--status-ok);
+  color: var(--status-ok);
+  padding: 14px 20px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+/* Role-gated visibility */
+.role-operator, .role-admin { display: none; }
+.role-operator.visible { display: initial; }
+.role-admin.visible { display: initial; }

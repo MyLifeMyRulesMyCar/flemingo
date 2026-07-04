@@ -4,10 +4,9 @@
 #
 # Publish direction (DI → MQTT):
 #   Polls DI state every poll_interval_ms milliseconds.
-#   When publish_on_change=True (default), only publishes when a DI
-#   channel's value actually changes.
-#   Debounce: two consecutive identical readings are required before a
-#   change is published — suppresses single-cycle noise spikes.
+#   When publish_on_change=False, publishes every DI channel on every poll.
+#   When publish_on_change=True, only publishes when a DI channel's value
+#   actually changes from its last published value.
 #   Topic: config["publish_topic_di"] with {channel} replaced by 0–3.
 #   Payload: {"value": 1, "channel": 0, "name": "DI0", "timestamp": "..."}
 #
@@ -26,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 _DI_CHANNELS  = 4   # Purple Pi OH2: DI0–DI3
 _DO_CHANNELS  = 4   # Purple Pi OH2: DO0–DO3
-_UNKNOWN      = object()   # sentinel for "never read"
 
 
 class IOBridge:
@@ -58,12 +56,7 @@ class IOBridge:
 
         self.running      = False
         self._poll_thread = None
-
-        # Debounce: two consecutive readings must agree before publishing.
-        # _debounce[ch] = pending value waiting for confirmation.
-        # _last_di[ch]  = last published value.
-        self._debounce = [_UNKNOWN] * _DI_CHANNELS
-        self._last_di  = [_UNKNOWN] * _DI_CHANNELS
+        self._last_di     = [None] * _DI_CHANNELS
 
         self.stats = {
             "di_published": 0,
@@ -89,11 +82,6 @@ class IOBridge:
             self._mqtt.register_subscription(
                 self.subscribe_topic_do, self._on_mqtt_do_set
             )
-
-            # Reset debounce state so we publish the initial DI reading
-            # immediately on start (not suppressed by stale history)
-            self._debounce = [_UNKNOWN] * _DI_CHANNELS
-            self._last_di  = [_UNKNOWN] * _DI_CHANNELS
 
             self.running = True
             self.stats["started_at"] = datetime.now().isoformat()
@@ -145,29 +133,14 @@ class IOBridge:
         now = datetime.now().isoformat()
 
         for ch in range(min(len(current_di), _DI_CHANNELS)):
-            val = current_di[ch]
+            val = int(current_di[ch])
 
-            # ── Debounce ───────────────────────────────────────────────
-            # First reading ever → store in debounce buffer, don't publish yet
-            if self._debounce[ch] is _UNKNOWN:
-                self._debounce[ch] = val
+            if self.publish_on_change and self._last_di[ch] == val:
                 continue
 
-            # Reading differs from debounce buffer → new pending change
-            if val != self._debounce[ch]:
-                self._debounce[ch] = val
-                continue  # wait one more cycle to confirm
-
-            # Two consecutive matching readings — confirmed stable value
-
-            # ── Change detection ───────────────────────────────────────
-            if self.publish_on_change and self._last_di[ch] == val:
-                continue   # no change, skip
-
-            # ── Publish ────────────────────────────────────────────────
             topic = self.publish_topic_di.replace("{channel}", str(ch))
             payload = {
-                "value":     int(val),
+                "value":     val,
                 "channel":   ch,
                 "name":      f"DI{ch}",
                 "timestamp": now,
@@ -219,10 +192,7 @@ class IOBridge:
     # Status
     # ----------------------------------------------------------------
     def get_status(self) -> dict:
-        last_di = [
-            None if v is _UNKNOWN else v
-            for v in self._last_di
-        ]
+        last_di = list(self._last_di)
         return {
             "running":           self.running,
             "poll_interval_ms":  self.poll_interval_ms,

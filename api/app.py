@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.logging_config import setup_logging
 setup_logging()
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
@@ -122,8 +122,25 @@ app.register_blueprint(mqtt_api)
 app.register_blueprint(system_api)
 
 print("=" * 60)
-print("PurpleIO API Server - Phase 9 (auth + validation + MQTT + backup/system)")
+print("PurpleIO API Server - Phase 10 (dashboard)")
 print("=" * 60)
+
+# ============================================
+# Phase 10 — Serve dashboard static files (Vite build output).
+# API routes (/api/*) take priority because blueprints are registered
+# above. This catch-all only fires for dashboard page requests.
+# ============================================
+_DASHBOARD_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "dashboard", "dist",
+)
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_dashboard(path):
+    if path and os.path.isfile(os.path.join(_DASHBOARD_PATH, path)):
+        return send_from_directory(_DASHBOARD_PATH, path)
+    return send_from_directory(_DASHBOARD_PATH, "index.html")
 
 # ============================================
 # WebSocket: live CAN message broadcast
@@ -194,6 +211,7 @@ def handle_request_can_status():
 def background_broadcast():
     logger.info("Background broadcast thread started")
     last_io = {"di": [], "do": []}
+    _ticks = 0
 
     while True:
         try:
@@ -203,6 +221,17 @@ def background_broadcast():
             if current_io != last_io:
                 logger.info(f"I/O state changed: {current_io}")
                 last_io = current_io
+
+            # Phase 10 — emit system_metrics every 10s (5 * 2s ticks)
+            if _ticks % 5 == 0:
+                try:
+                    from core.system_metrics import collect_metrics
+                    from core.mqtt_manager import mqtt_manager as _mm
+                    m = collect_metrics(mqtt_manager=_mm)
+                    socketio.emit("system_metrics", m, namespace="/")
+                except Exception:
+                    pass
+            _ticks += 1
 
         except Exception as e:
             logger.error(f"Background broadcast error: {e}")
