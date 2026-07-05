@@ -1,0 +1,21 @@
+[Unit]
+Description=Flemingo Edge Controller (Purple Pi OH2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+Group=__SERVICE_USER__
+WorkingDirectory=__REPO_ROOT__
+Environment=PURPLEIO_HOST=0.0.0.0
+Environment=PURPLEIO_PORT=5000
+ExecStart=__VENV_DIR__/bin/python3 __REPO_ROOT__/api/app.py
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SupplementaryGroups=gpio spi dialout
+
+[Install]
+WantedBy=multi-user.target
