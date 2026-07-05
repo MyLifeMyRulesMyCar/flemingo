@@ -34,8 +34,12 @@ class WatchdogTimer:
         watchdog.feed()
     """
 
-    def __init__(self, timeout: int = 30, check_interval: int = 10,
-                 on_timeout: Optional[Callable] = None):
+    def __init__(
+        self,
+        timeout: int = 30,
+        check_interval: int = 10,
+        on_timeout: Optional[Callable] = None,
+    ):
         """
         Args:
             timeout: seconds without a feed() before this is considered
@@ -59,7 +63,9 @@ class WatchdogTimer:
         self.components: Dict[str, Dict] = {}
         self.timeout_count = 0
 
-        logger.info(f"Watchdog initialized (timeout={timeout}s, check_interval={check_interval}s)")
+        logger.info(
+            f"Watchdog initialized (timeout={timeout}s, check_interval={check_interval}s)"
+        )
 
     def feed(self):
         """Call this once per iteration of the loop being monitored."""
@@ -94,8 +100,10 @@ class WatchdogTimer:
                 component["failures"] = 0 if is_healthy else component["failures"] + 1
 
                 if not is_healthy:
-                    logger.warning(f"Watchdog: component '{name}' unhealthy "
-                                    f"(failures: {component['failures']})")
+                    logger.warning(
+                        f"Watchdog: component '{name}' unhealthy "
+                        f"(failures: {component['failures']})"
+                    )
                 return is_healthy
 
             except Exception as e:
@@ -138,9 +146,11 @@ class WatchdogTimer:
         unhealthy = [name for name, ok in self.check_all_components().items() if not ok]
         if unhealthy:
             logger.critical(f"  unhealthy components: {', '.join(unhealthy)}")
-        logger.critical("  no automatic recovery action configured - "
-                         "if this unit has a systemd watchdog binding, consider exiting "
-                         "the process here so systemd restarts it cleanly")
+        logger.critical(
+            "  no automatic recovery action configured - "
+            "if this unit has a systemd watchdog binding, consider exiting "
+            "the process here so systemd restarts it cleanly"
+        )
 
     def _watchdog_loop(self):
         logger.info("Watchdog monitoring started")
@@ -152,7 +162,9 @@ class WatchdogTimer:
                     time_since_feed = time.time() - self.last_feed
                     if time_since_feed >= self.timeout:
                         self.timeout_count += 1
-                        logger.warning(f"Watchdog timeout ({time_since_feed:.1f}s >= {self.timeout}s)")
+                        logger.warning(
+                            f"Watchdog timeout ({time_since_feed:.1f}s >= {self.timeout}s)"
+                        )
                         self.on_timeout()
                         self.last_feed = time.time()  # avoid re-firing every second
 
@@ -175,7 +187,9 @@ class WatchdogTimer:
             return
         self.running = True
         self.last_feed = time.time()
-        self.thread = threading.Thread(target=self._watchdog_loop, name="Watchdog", daemon=True)
+        self.thread = threading.Thread(
+            target=self._watchdog_loop, name="Watchdog", daemon=True
+        )
         self.thread.start()
         logger.info("Watchdog started")
 

@@ -31,12 +31,16 @@ def main():
     print("=" * 52)
     print("Phase 3 - Modbus RTU Basic Read")
     print("=" * 52)
-    print(f"Port: {MODBUS_PORTS[args.port]['device']}  "
-          f"Slave: {args.slave}  Baud: {args.baudrate}\n")
+    print(
+        f"Port: {MODBUS_PORTS[args.port]['device']}  "
+        f"Slave: {args.slave}  Baud: {args.baudrate}\n"
+    )
 
     mgr = ModbusManager()
     dev_id = mgr.add_device(
-        "Basic Test Device", port=args.port, slave_id=args.slave,
+        "Basic Test Device",
+        port=args.port,
+        slave_id=args.slave,
         baudrate=args.baudrate,
     )
 

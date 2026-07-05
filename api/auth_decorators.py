@@ -33,7 +33,7 @@ def _extract_token() -> str | None:
     """Pull 'Bearer <token>' from Authorization header."""
     header = request.headers.get("Authorization", "")
     if header.startswith("Bearer "):
-        return header[len("Bearer "):]
+        return header[len("Bearer ") :]
     return None
 
 
@@ -67,6 +67,7 @@ def require_auth(fn):
     changing their password. Use this on /api/auth/change-password too,
     but add skip_password_check=True inside the route (see auth_routes.py).
     """
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         payload, err = _verify_and_set_g()
@@ -74,12 +75,18 @@ def require_auth(fn):
             return jsonify(err[0]), err[1]
 
         if payload.get("must_change_password"):
-            return jsonify({
-                "error": "Password change required before using this endpoint",
-                "must_change_password": True,
-            }), 403
+            return (
+                jsonify(
+                    {
+                        "error": "Password change required before using this endpoint",
+                        "must_change_password": True,
+                    }
+                ),
+                403,
+            )
 
         return fn(*args, **kwargs)
+
     return wrapper
 
 
@@ -95,6 +102,7 @@ def require_role(min_role: str):
         def send():
             ...
     """
+
     def decorator(fn):
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
@@ -103,17 +111,29 @@ def require_role(min_role: str):
                 return jsonify(err[0]), err[1]
 
             if payload.get("must_change_password"):
-                return jsonify({
-                    "error": "Password change required before using this endpoint",
-                    "must_change_password": True,
-                }), 403
+                return (
+                    jsonify(
+                        {
+                            "error": "Password change required before using this endpoint",
+                            "must_change_password": True,
+                        }
+                    ),
+                    403,
+                )
 
             role = payload.get("role", "")
             if not role_at_least(role, min_role):
-                return jsonify({
-                    "error": f"Insufficient permissions (need '{min_role}', have '{role}')"
-                }), 403
+                return (
+                    jsonify(
+                        {
+                            "error": f"Insufficient permissions (need '{min_role}', have '{role}')"
+                        }
+                    ),
+                    403,
+                )
 
             return fn(*args, **kwargs)
+
         return wrapper
+
     return decorator

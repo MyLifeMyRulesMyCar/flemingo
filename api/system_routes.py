@@ -20,30 +20,30 @@ from flask import Blueprint, jsonify, request, send_file
 from api.auth_decorators import require_role
 from api.validators import ValidationError, validate_backup_file
 from core.config import VERSION
-from core.system_metrics import collect_metrics, get_temperature, _get_primary_ip
+from core.system_metrics import collect_metrics, _get_primary_ip
 from core.backup_manager import create_backup, restore_backup
 
 logger = logging.getLogger(__name__)
 system_api = Blueprint("system_api", __name__)
 
-_io_mgr    = None
-_can_mgr   = None
+_io_mgr = None
+_can_mgr = None
 _modbus_mgr = None
-_mqtt_mgr  = None
+_mqtt_mgr = None
 
 
-def set_system_managers(io_manager, can_manager, modbus_manager,
-                        mqtt_manager=None):
+def set_system_managers(io_manager, can_manager, modbus_manager, mqtt_manager=None):
     global _io_mgr, _can_mgr, _modbus_mgr, _mqtt_mgr
-    _io_mgr    = io_manager
-    _can_mgr   = can_manager
+    _io_mgr = io_manager
+    _can_mgr = can_manager
     _modbus_mgr = modbus_manager
-    _mqtt_mgr  = mqtt_manager
+    _mqtt_mgr = mqtt_manager
 
 
 # ════════════════════════════════════════════════════════════════════
 # System info
 # ════════════════════════════════════════════════════════════════════
+
 
 @system_api.route("/api/system/info", methods=["GET"])
 @require_role("viewer")
@@ -53,21 +53,27 @@ def system_info():
     except Exception:
         uptime = None
 
-    return jsonify({
-        "hostname":         socket.gethostname(),
-        "ip":               _get_primary_ip(),
-        "python_version":   platform.python_version(),
-        "firmware_version": VERSION,
-        "uptime_seconds":   uptime,
-        "node":             platform.node(),
-        "system":           platform.system(),
-        "machine":          platform.machine(),
-    }), 200
+    return (
+        jsonify(
+            {
+                "hostname": socket.gethostname(),
+                "ip": _get_primary_ip(),
+                "python_version": platform.python_version(),
+                "firmware_version": VERSION,
+                "uptime_seconds": uptime,
+                "node": platform.node(),
+                "system": platform.system(),
+                "machine": platform.machine(),
+            }
+        ),
+        200,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════
 # System metrics
 # ════════════════════════════════════════════════════════════════════
+
 
 @system_api.route("/api/system/metrics", methods=["GET"])
 @require_role("viewer")
@@ -79,15 +85,15 @@ def system_metrics():
 # Backup download
 # ════════════════════════════════════════════════════════════════════
 
+
 @system_api.route("/api/system/backup", methods=["GET"])
 @require_role("admin")
 def backup_download():
     device_id = socket.gethostname()
     try:
         from core.config import load_mqtt_config
-        device_id = load_mqtt_config().get(
-            "bridges", {}
-        ).get("device_id", device_id)
+
+        device_id = load_mqtt_config().get("bridges", {}).get("device_id", device_id)
     except Exception:
         pass
 
@@ -104,6 +110,7 @@ def backup_download():
 # ════════════════════════════════════════════════════════════════════
 # Restore upload
 # ════════════════════════════════════════════════════════════════════
+
 
 @system_api.route("/api/system/restore", methods=["POST"])
 @require_role("admin")
@@ -125,17 +132,22 @@ def restore_upload():
         logger.exception("Unexpected error during restore")
         return jsonify({"error": f"Restore failed: {e}"}), 500
 
-    return jsonify({
-        "message": (
-            "Configuration restored successfully. "
-            "Restart required (sudo systemctl restart flemingo "
-            "or restart api/app.py)."
+    return (
+        jsonify(
+            {
+                "message": (
+                    "Configuration restored successfully. "
+                    "Restart required (sudo systemctl restart flemingo "
+                    "or restart api/app.py)."
+                ),
+                "restart_required": True,
+                "restored_files": restored,
+                "note": (
+                    "Backup includes mqtt.yaml which may contain broker "
+                    "credentials. The operator is responsible for the security "
+                    "of the backup file."
+                ),
+            }
         ),
-        "restart_required": True,
-        "restored_files": restored,
-        "note": (
-            "Backup includes mqtt.yaml which may contain broker "
-            "credentials. The operator is responsible for the security "
-            "of the backup file."
-        ),
-    }), 200
+        200,
+    )

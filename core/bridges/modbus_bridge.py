@@ -44,45 +44,55 @@ class ModbusBridge:
     """
 
     def __init__(self, mqtt_manager, modbus_manager, config: dict):
-        self._mqtt   = mqtt_manager
+        self._mqtt = mqtt_manager
         self._modbus = modbus_manager
-        self._lock   = threading.Lock()
+        self._lock = threading.Lock()
 
-        self.poll_interval_s       = config.get("poll_interval_s", 5)
-        self.publish_topic_tmpl    = config.get(
+        self.poll_interval_s = config.get("poll_interval_s", 5)
+        self.publish_topic_tmpl = config.get(
             "publish_topic_template", "flemingo/edge-01/modbus/{dev_id}/r{address}"
         )
-        self.subscribe_topic_tmpl  = config.get(
+        self.subscribe_topic_tmpl = config.get(
             "subscribe_topic_template", "flemingo/edge-01/modbus/+/set"
         )
         self.qos = config.get("qos", 1)
 
-        self.running       = False
-        self.register_list = []      # [{device_id, address, function_code}, ...]
-        self._poll_thread  = None
+        self.running = False
+        self.register_list = []  # [{device_id, address, function_code}, ...]
+        self._poll_thread = None
 
         self.stats = {
-            "published":  0,
-            "received":   0,
-            "errors":     0,
+            "published": 0,
+            "received": 0,
+            "errors": 0,
             "started_at": None,
         }
 
     # ----------------------------------------------------------------
     # Lifecycle
     # ----------------------------------------------------------------
-    def start(self, register_list: list = None, poll_interval_s: float = None,
-              publish_topic_template: str = None, subscribe_topic_template: str = None,
-              qos: int = None):
+    def start(
+        self,
+        register_list: list = None,
+        poll_interval_s: float = None,
+        publish_topic_template: str = None,
+        subscribe_topic_template: str = None,
+        qos: int = None,
+    ):
         with self._lock:
             if self.running:
                 raise RuntimeError("Modbus bridge is already running")
 
-            if register_list           is not None: self.register_list        = register_list
-            if poll_interval_s         is not None: self.poll_interval_s      = poll_interval_s
-            if publish_topic_template  is not None: self.publish_topic_tmpl   = publish_topic_template
-            if subscribe_topic_template is not None: self.subscribe_topic_tmpl = subscribe_topic_template
-            if qos                     is not None: self.qos                  = qos
+            if register_list is not None:
+                self.register_list = register_list
+            if poll_interval_s is not None:
+                self.poll_interval_s = poll_interval_s
+            if publish_topic_template is not None:
+                self.publish_topic_tmpl = publish_topic_template
+            if subscribe_topic_template is not None:
+                self.subscribe_topic_tmpl = subscribe_topic_template
+            if qos is not None:
+                self.qos = qos
 
             self._mqtt.register_subscription(
                 self.subscribe_topic_tmpl, self._on_mqtt_write
@@ -133,8 +143,8 @@ class ModbusBridge:
                 break
 
             device_id = reg.get("device_id")
-            address   = reg.get("address")
-            fc        = reg.get("function_code", 3)
+            address = reg.get("address")
+            fc = reg.get("function_code", 3)
 
             if device_id is None or address is None:
                 continue
@@ -142,21 +152,21 @@ class ModbusBridge:
             try:
                 value = self._read_register(device_id, address, fc)
                 if value is None:
-                    continue   # device disconnected or breaker open — skip silently
+                    continue  # device disconnected or breaker open — skip silently
 
-                topic = (self.publish_topic_tmpl
-                         .replace("{dev_id}", str(device_id))
-                         .replace("{address}", str(address)))
+                topic = self.publish_topic_tmpl.replace(
+                    "{dev_id}", str(device_id)
+                ).replace("{address}", str(address))
 
                 # Get human-readable device name if available
                 dev = self._modbus.get_device(device_id)
                 payload = {
-                    "value":         value,
-                    "device":        dev.name if dev else device_id,
-                    "device_id":     device_id,
-                    "address":       address,
+                    "value": value,
+                    "device": dev.name if dev else device_id,
+                    "device_id": device_id,
+                    "address": address,
                     "function_code": fc,
-                    "timestamp":     datetime.now().isoformat(),
+                    "timestamp": datetime.now().isoformat(),
                 }
                 ok = self._mqtt.publish(topic, payload, qos=self.qos)
                 if ok:
@@ -169,10 +179,14 @@ class ModbusBridge:
                 )
 
     def _read_register(self, device_id, address, fc):
-        if   fc == 3: return self._modbus.read_holding_register(device_id, address)
-        elif fc == 4: return self._modbus.read_input_register(device_id, address)
-        elif fc == 1: return self._modbus.read_coil(device_id, address)
-        elif fc == 2: return self._modbus.read_discrete_input(device_id, address)
+        if fc == 3:
+            return self._modbus.read_holding_register(device_id, address)
+        elif fc == 4:
+            return self._modbus.read_input_register(device_id, address)
+        elif fc == 1:
+            return self._modbus.read_coil(device_id, address)
+        elif fc == 2:
+            return self._modbus.read_discrete_input(device_id, address)
         else:
             logger.warning(f"Modbus bridge: unsupported function code {fc}")
             return None
@@ -194,14 +208,14 @@ class ModbusBridge:
             parts = topic.split("/")
             try:
                 modbus_idx = parts.index("modbus")
-                device_id  = parts[modbus_idx + 1]
+                device_id = parts[modbus_idx + 1]
             except (ValueError, IndexError):
                 raise ValueError(f"Cannot extract device_id from topic '{topic}'")
 
-            payload       = json.loads(payload_str)
-            address       = int(payload.get("address", 0))
-            value         = payload.get("value")
-            fc            = int(payload.get("function_code", 6))
+            payload = json.loads(payload_str)
+            address = int(payload.get("address", 0))
+            value = payload.get("value")
+            fc = int(payload.get("function_code", 6))
 
             if value is None:
                 raise ValueError("'value' is required in write payload")
@@ -242,30 +256,39 @@ class ModbusBridge:
         """Hot-update the register list while the bridge is running."""
         with self._lock:
             self.register_list = list(register_list)
-        logger.info(f"Modbus bridge: register list updated ({len(register_list)} entries)")
+        logger.info(
+            f"Modbus bridge: register list updated ({len(register_list)} entries)"
+        )
 
     # ----------------------------------------------------------------
     # Status
     # ----------------------------------------------------------------
     def get_status(self) -> dict:
         return {
-            "running":                  self.running,
-            "poll_interval_s":          self.poll_interval_s,
-            "publish_topic_template":   self.publish_topic_tmpl,
+            "running": self.running,
+            "poll_interval_s": self.poll_interval_s,
+            "publish_topic_template": self.publish_topic_tmpl,
             "subscribe_topic_template": self.subscribe_topic_tmpl,
-            "qos":                      self.qos,
-            "register_count":           len(self.register_list),
-            "registers":                list(self.register_list),
-            "stats":                    dict(self.stats),
+            "qos": self.qos,
+            "register_count": len(self.register_list),
+            "registers": list(self.register_list),
+            "stats": dict(self.stats),
         }
 
-    def update_config(self, poll_interval_s: float = None,
-                      publish_topic_template: str = None,
-                      subscribe_topic_template: str = None,
-                      qos: int = None):
+    def update_config(
+        self,
+        poll_interval_s: float = None,
+        publish_topic_template: str = None,
+        subscribe_topic_template: str = None,
+        qos: int = None,
+    ):
         if self.running:
             raise RuntimeError("Stop the bridge before changing its config")
-        if poll_interval_s          is not None: self.poll_interval_s      = poll_interval_s
-        if publish_topic_template   is not None: self.publish_topic_tmpl   = publish_topic_template
-        if subscribe_topic_template is not None: self.subscribe_topic_tmpl = subscribe_topic_template
-        if qos                      is not None: self.qos                  = qos
+        if poll_interval_s is not None:
+            self.poll_interval_s = poll_interval_s
+        if publish_topic_template is not None:
+            self.publish_topic_tmpl = publish_topic_template
+        if subscribe_topic_template is not None:
+            self.subscribe_topic_tmpl = subscribe_topic_template
+        if qos is not None:
+            self.qos = qos

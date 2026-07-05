@@ -5,6 +5,7 @@
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -18,6 +19,7 @@ from core.auth_manager import role_at_least, TokenError
 # ═══════════════════════════════════════════════════════════════════
 # Auth primitives (building blocks)
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TestAuthPrimitives:
     def test_role_at_least_viewer_below_operator(self):
@@ -38,6 +40,7 @@ class TestAuthPrimitives:
 
     def test_verify_token_rejects_expired(self, isolated_auth, tmp_path):
         from core.auth_manager import AuthManager
+
         mgr = AuthManager(
             users_path=str(tmp_path / "users.json"),
             secret_path=str(tmp_path / "jwt_secret.key"),
@@ -70,6 +73,7 @@ class TestAuthPrimitives:
 # Real SocketIO handler tests (Phase 10 security gates)
 # ═══════════════════════════════════════════════════════════════════
 
+
 def _make_mock_state():
     """Fake ThreadSafeState for testing."""
     return MagicMock(
@@ -82,9 +86,12 @@ def _make_mock_state():
 def _make_mock_can():
     """Fake CANManager for testing."""
     return MagicMock(
-        get_status=MagicMock(return_value={
-            "connected": False, "bitrate": 125000,
-        }),
+        get_status=MagicMock(
+            return_value={
+                "connected": False,
+                "bitrate": 125000,
+            }
+        ),
     )
 
 
@@ -132,13 +139,12 @@ class TestSocketHandlers:
         client.disconnect()
 
     def test_connect_rejects_no_token(self, socketio_app):
-        client = socketio_app.sio.test_client(
-            socketio_app, namespace="/", auth={}
-        )
+        client = socketio_app.sio.test_client(socketio_app, namespace="/", auth={})
         assert client.is_connected(namespace="/") is False
 
     def test_connect_rejects_expired_token(self, socketio_app, tmp_path):
         from core.auth_manager import AuthManager
+
         mgr = AuthManager(
             users_path=str(tmp_path / "users.json"),
             secret_path=str(tmp_path / "jwt_secret.key"),
@@ -158,8 +164,9 @@ class TestSocketHandlers:
         token = shared_auth.issue_access_token(
             {"username": "t", "role": "viewer", "must_change_password": False}
         )
-        client = socketio_app.sio.test_client(socketio_app, namespace="/",
-                                               auth={"token": token})
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
         client.get_received("/")  # discard io_update/can_status
         client.emit("set_do", {"channel": 0, "value": 1}, namespace="/")
         events = [e for e in client.get_received("/") if e.get("name") == "error"]
@@ -172,8 +179,9 @@ class TestSocketHandlers:
         token = shared_auth.issue_access_token(
             {"username": "op", "role": "operator", "must_change_password": False}
         )
-        client = socketio_app.sio.test_client(socketio_app, namespace="/",
-                                               auth={"token": token})
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
         client.get_received("/")  # discard io_update/can_status
         client.emit("set_do", {"channel": 2, "value": 1}, namespace="/")
         socketio_app._io.write_output.assert_called_once_with(2, 1)
@@ -183,8 +191,9 @@ class TestSocketHandlers:
         token = shared_auth.issue_access_token(
             {"username": "op", "role": "operator", "must_change_password": False}
         )
-        client = socketio_app.sio.test_client(socketio_app, namespace="/",
-                                               auth={"token": token})
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
         client.get_received("/")
         client.disconnect()
         # No crash = pass
@@ -193,8 +202,9 @@ class TestSocketHandlers:
         token = shared_auth.issue_access_token(
             {"username": "op", "role": "operator", "must_change_password": False}
         )
-        client = socketio_app.sio.test_client(socketio_app, namespace="/",
-                                               auth={"token": token})
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
         client.get_received("/")  # discard connect emits
         client.emit("request_io", {}, namespace="/")
         events = [e for e in client.get_received("/") if e.get("name") == "io_update"]
@@ -205,8 +215,9 @@ class TestSocketHandlers:
         token = shared_auth.issue_access_token(
             {"username": "op", "role": "operator", "must_change_password": False}
         )
-        client = socketio_app.sio.test_client(socketio_app, namespace="/",
-                                               auth={"token": token})
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
         client.get_received("/")
         client.emit("set_do", {"channel": 9, "value": 1}, namespace="/")
         events = [e for e in client.get_received("/") if e.get("name") == "error"]

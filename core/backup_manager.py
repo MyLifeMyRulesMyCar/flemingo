@@ -26,10 +26,10 @@ from core.config import VERSION
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_DIR   = os.path.join(PROJECT_ROOT, "config")
+CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 
 BACKUP_FILES = ["reliability.yaml", "mqtt.yaml", "users.json"]
-EXCLUDED     = {"jwt_secret.key"}
+EXCLUDED = {"jwt_secret.key"}
 
 MAX_UNCOMPRESSED_MB = 10
 _MAX_BYTES = MAX_UNCOMPRESSED_MB * 1024 * 1024
@@ -47,13 +47,14 @@ def create_backup(version: str = VERSION, device_id: str = None) -> io.BytesIO:
     """
     if device_id is None:
         import socket
+
         device_id = socket.gethostname()
 
     manifest = {
-        "version":    version,
+        "version": version,
         "created_at": datetime.now().isoformat(),
-        "device_id":  device_id,
-        "files":      [],
+        "device_id": device_id,
+        "files": [],
     }
 
     buf = io.BytesIO()
@@ -98,7 +99,7 @@ def restore_backup(
     Returns the list of basenames that were successfully written to disk.
     """
     target_dir = target_dir or CONFIG_DIR
-    restored   = []
+    restored = []
 
     # ── 1. Validate zip ──────────────────────────────────────────────
     try:
@@ -118,7 +119,7 @@ def restore_backup(
         # ── 3. Manifest check ───────────────────────────────────────
         try:
             manifest_raw = zf.read("backup_manifest.json")
-            manifest     = json.loads(manifest_raw.decode("utf-8"))
+            manifest = json.loads(manifest_raw.decode("utf-8"))
         except KeyError:
             raise ValueError("Backup zip is missing backup_manifest.json")
         except json.JSONDecodeError as e:
@@ -127,7 +128,6 @@ def restore_backup(
         if not isinstance(manifest, dict) or "files" not in manifest:
             raise ValueError("backup_manifest.json must be a dict with a 'files' key")
 
-        file_list = manifest.get("files", [])
         backup_version = manifest.get("version", "unknown")
         if strict_version and backup_version != version:
             raise ValueError(
@@ -160,6 +160,7 @@ def restore_backup(
             if filename.endswith(".yaml"):
                 try:
                     import yaml  # noqa: F811
+
                     yaml.safe_load(content.decode("utf-8"))
                 except Exception as e:
                     raise ValueError(

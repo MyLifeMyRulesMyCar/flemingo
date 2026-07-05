@@ -14,6 +14,7 @@ import pytest
 def _patch_logging_to_null():
     """Silence logging during tests — prevents FIRST BOOT spam."""
     import logging
+
     logging.disable(logging.CRITICAL)
 
 

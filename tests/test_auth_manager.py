@@ -17,7 +17,6 @@ from core.auth_manager import (
     UserExistsError,
     UserNotFoundError,
     role_at_least,
-    ROLE_RANK,
 )
 
 
@@ -35,16 +34,16 @@ def make_manager(tmp_dir, **kwargs) -> AuthManager:
 # Section 1: Role hierarchy
 # -------------------------------------------------------
 def test_role_hierarchy():
-    assert role_at_least("admin", "viewer"),   "admin satisfies viewer"
+    assert role_at_least("admin", "viewer"), "admin satisfies viewer"
     assert role_at_least("admin", "operator"), "admin satisfies operator"
-    assert role_at_least("admin", "admin"),    "admin satisfies admin"
-    assert role_at_least("operator", "viewer"),   "operator satisfies viewer"
+    assert role_at_least("admin", "admin"), "admin satisfies admin"
+    assert role_at_least("operator", "viewer"), "operator satisfies viewer"
     assert role_at_least("operator", "operator"), "operator satisfies operator"
     assert not role_at_least("operator", "admin"), "operator does NOT satisfy admin"
-    assert role_at_least("viewer", "viewer"),      "viewer satisfies viewer"
+    assert role_at_least("viewer", "viewer"), "viewer satisfies viewer"
     assert not role_at_least("viewer", "operator"), "viewer does NOT satisfy operator"
-    assert not role_at_least("viewer", "admin"),    "viewer does NOT satisfy admin"
-    assert not role_at_least("ghost", "viewer"),    "unknown role does NOT satisfy viewer"
+    assert not role_at_least("viewer", "admin"), "viewer does NOT satisfy admin"
+    assert not role_at_least("ghost", "viewer"), "unknown role does NOT satisfy viewer"
 
 
 # -------------------------------------------------------

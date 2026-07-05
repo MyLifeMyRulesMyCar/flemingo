@@ -41,6 +41,7 @@ from typing import Any
 class ValidationError(Exception):
     """Raised by any validate_* function on bad input.
     Message is end-user safe (no stack trace, no internal paths)."""
+
     pass
 
 
@@ -108,9 +109,11 @@ def parse_int_or_hex(value: Any, name: str) -> int:
     if isinstance(value, str):
         s = value.strip()
         try:
-            return int(s, 0)   # int(s, 0) handles "0x1FF", "291", "0b101"
+            return int(s, 0)  # int(s, 0) handles "0x1FF", "291", "0b101"
         except ValueError:
-            raise ValidationError(f"'{name}' must be an integer or hex string, got {value!r}")
+            raise ValidationError(
+                f"'{name}' must be an integer or hex string, got {value!r}"
+            )
     raise ValidationError(f"'{name}' must be an integer, got {type(value).__name__}")
 
 
@@ -142,8 +145,8 @@ def require_fields(data: dict, *fields: str):
 # ============================================================
 _CAN_BITRATES = {125_000, 250_000, 500_000, 1_000_000}
 _CAN_CRYSTALS = {8_000_000, 16_000_000}
-_CAN_STD_MAX  = 0x7FF         # 11-bit standard frame
-_CAN_EXT_MAX  = 0x1FFFFFFF    # 29-bit extended frame
+_CAN_STD_MAX = 0x7FF  # 11-bit standard frame
+_CAN_EXT_MAX = 0x1FFFFFFF  # 29-bit extended frame
 
 
 def validate_can_bitrate(value: Any) -> int:
@@ -191,7 +194,9 @@ def validate_can_payload(value: Any) -> list[int]:
     Each element may be int or hex string.
     """
     if not isinstance(value, list):
-        raise ValidationError(f"'data' must be a list of bytes, got {type(value).__name__}")
+        raise ValidationError(
+            f"'data' must be a list of bytes, got {type(value).__name__}"
+        )
     if len(value) > 8:
         raise ValidationError(f"CAN payload must be ≤ 8 bytes, got {len(value)}")
     result = []
@@ -203,8 +208,9 @@ def validate_can_payload(value: Any) -> list[int]:
     return result
 
 
-def validate_count(value: Any, name: str = "count",
-                   min_val: int = 1, max_val: int = 1000) -> int:
+def validate_count(
+    value: Any, name: str = "count", min_val: int = 1, max_val: int = 1000
+) -> int:
     """
     General-purpose count/limit query param.
     Used for GET /api/can/messages?count=N and GET /api/modbus/logs?count=N.
@@ -219,14 +225,14 @@ def validate_count(value: Any, name: str = "count",
 # ============================================================
 # Modbus validators
 # ============================================================
-_MODBUS_SLAVE_MIN  = 1
-_MODBUS_SLAVE_MAX  = 247
-_MODBUS_ADDR_MIN   = 0
-_MODBUS_ADDR_MAX   = 65535
-_MODBUS_REG_MAX    = 65535
-_MODBUS_BAUDRATES  = {9600, 19200, 38400, 57600, 115200, 230400}
-_MODBUS_PARITIES   = {"N", "E", "O"}
-_MODBUS_STOPBITS   = {1, 2}
+_MODBUS_SLAVE_MIN = 1
+_MODBUS_SLAVE_MAX = 247
+_MODBUS_ADDR_MIN = 0
+_MODBUS_ADDR_MAX = 65535
+_MODBUS_REG_MAX = 65535
+_MODBUS_BAUDRATES = {9600, 19200, 38400, 57600, 115200, 230400}
+_MODBUS_PARITIES = {"N", "E", "O"}
+_MODBUS_STOPBITS = {1, 2}
 
 
 def validate_modbus_slave_id(value: Any) -> int:
@@ -304,9 +310,7 @@ def validate_modbus_port(value: Any, valid_ports: dict | set) -> str:
         raise ValidationError(f"port must be a string, got {type(value).__name__}")
     v = value.strip()
     if v not in valid_ports:
-        raise ValidationError(
-            f"port must be one of {sorted(valid_ports)}, got {v!r}"
-        )
+        raise ValidationError(f"port must be one of {sorted(valid_ports)}, got {v!r}")
     return v
 
 
@@ -316,9 +320,7 @@ def validate_modbus_scan_range(start_id: int, end_id: int):
     and start must be ≤ end. Call after validating each ID individually.
     """
     if start_id > end_id:
-        raise ValidationError(
-            f"start_id ({start_id}) must be ≤ end_id ({end_id})"
-        )
+        raise ValidationError(f"start_id ({start_id}) must be ≤ end_id ({end_id})")
 
 
 def validate_device_name(value: Any) -> str:
@@ -346,12 +348,12 @@ def validate_device_name(value: Any) -> str:
 # MQTT validators (Phase 8)
 # ============================================================
 _MQTT_TOPIC_MAX_LEN = 128
-_MQTT_PORT_MIN      = 1
-_MQTT_PORT_MAX      = 65535
-_POLL_INTERVAL_S_MIN   = 0.5
-_POLL_INTERVAL_S_MAX   = 3600.0
-_POLL_INTERVAL_MS_MIN  = 10
-_POLL_INTERVAL_MS_MAX  = 10_000
+_MQTT_PORT_MIN = 1
+_MQTT_PORT_MAX = 65535
+_POLL_INTERVAL_S_MIN = 0.5
+_POLL_INTERVAL_S_MAX = 3600.0
+_POLL_INTERVAL_MS_MIN = 10
+_POLL_INTERVAL_MS_MAX = 10_000
 
 
 def validate_mqtt_host(value: Any) -> str:
@@ -385,7 +387,9 @@ def validate_mqtt_topic(value: Any) -> str:
     Rejects null bytes and leading/trailing whitespace.
     """
     if not isinstance(value, str):
-        raise ValidationError(f"MQTT topic must be a string, got {type(value).__name__}")
+        raise ValidationError(
+            f"MQTT topic must be a string, got {type(value).__name__}"
+        )
     v = value.strip()
     if not v:
         raise ValidationError("MQTT topic must not be empty")

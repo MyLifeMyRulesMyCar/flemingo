@@ -12,7 +12,9 @@ import logging
 import logging.handlers
 import os
 
-DEFAULT_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+DEFAULT_LOG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
+)
 DEFAULT_LOG_FILE = os.path.join(DEFAULT_LOG_DIR, "flemingo.log")
 
 _configured = False
@@ -59,9 +61,9 @@ def setup_logging(level=None, log_file=None, max_bytes=5 * 1024 * 1024, backup_c
         file_handler = logging.handlers.RotatingFileHandler(
             log_file, maxBytes=max_bytes, backupCount=backup_count
         )
-        file_handler.setFormatter(logging.Formatter(
-            "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-        ))
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s")
+        )
         root.addHandler(file_handler)
     except OSError as e:
         # Don't let a permissions/disk problem on the log file take down
@@ -77,4 +79,6 @@ def setup_logging(level=None, log_file=None, max_bytes=5 * 1024 * 1024, backup_c
     logging.getLogger("socketio").setLevel(logging.WARNING)
 
     _configured = True
-    logging.getLogger(__name__).info(f"Logging configured (level={logging.getLevelName(level)}, file={log_file})")
+    logging.getLogger(__name__).info(
+        f"Logging configured (level={logging.getLevelName(level)}, file={log_file})"
+    )

@@ -63,6 +63,7 @@ def role_at_least(role: str, required: str) -> bool:
 # ============================================
 class AuthError(Exception):
     """Base class - bad credentials, expired/invalid token, unknown user, etc."""
+
     pass
 
 
@@ -111,10 +112,14 @@ class AuthManager:
         payload = mgr.verify_token(access, expected_type="access")
     """
 
-    def __init__(self, users_path: str = None, secret_path: str = None,
-                 access_token_minutes: int = DEFAULT_ACCESS_TOKEN_MINUTES,
-                 refresh_token_days: int = DEFAULT_REFRESH_TOKEN_DAYS,
-                 min_password_length: int = DEFAULT_MIN_PASSWORD_LENGTH):
+    def __init__(
+        self,
+        users_path: str = None,
+        secret_path: str = None,
+        access_token_minutes: int = DEFAULT_ACCESS_TOKEN_MINUTES,
+        refresh_token_days: int = DEFAULT_REFRESH_TOKEN_DAYS,
+        min_password_length: int = DEFAULT_MIN_PASSWORD_LENGTH,
+    ):
         self.users_path = users_path or DEFAULT_USERS_PATH
         self.secret_path = secret_path or DEFAULT_SECRET_PATH
         self.access_token_minutes = access_token_minutes
@@ -160,7 +165,9 @@ class AuthManager:
             with open(self.users_path, "r") as f:
                 self._users = json.load(f)
         except Exception as e:
-            logger.error(f"Could not read {self.users_path} ({e}) - starting with no users")
+            logger.error(
+                f"Could not read {self.users_path} ({e}) - starting with no users"
+            )
             self._users = {}
 
     def _save_users(self):
@@ -204,9 +211,13 @@ class AuthManager:
     # ----------------------------------------
     def create_user(self, username: str, password: str, role: str) -> dict:
         if role not in VALID_ROLES:
-            raise ValueError(f"Invalid role '{role}', must be one of {sorted(VALID_ROLES)}")
+            raise ValueError(
+                f"Invalid role '{role}', must be one of {sorted(VALID_ROLES)}"
+            )
         if len(password) < self.min_password_length:
-            raise ValueError(f"Password must be at least {self.min_password_length} characters")
+            raise ValueError(
+                f"Password must be at least {self.min_password_length} characters"
+            )
 
         with self._lock:
             if username in self._users:
@@ -250,7 +261,9 @@ class AuthManager:
             if not check_password_hash(user["password_hash"], old_password):
                 raise InvalidCredentialsError("Current password is incorrect")
             if len(new_password) < self.min_password_length:
-                raise ValueError(f"Password must be at least {self.min_password_length} characters")
+                raise ValueError(
+                    f"Password must be at least {self.min_password_length} characters"
+                )
             user["password_hash"] = generate_password_hash(new_password)
             user["must_change_password"] = False
             self._save_users()
@@ -302,7 +315,9 @@ class AuthManager:
             raise TokenError(f"Invalid token: {e}")
 
         if payload.get("type") != expected_type:
-            raise TokenError(f"Expected a {expected_type} token, got {payload.get('type')}")
+            raise TokenError(
+                f"Expected a {expected_type} token, got {payload.get('type')}"
+            )
 
         if expected_type == "refresh" and payload.get("jti") in self._revoked_jti:
             raise TokenError("Token has been revoked")
@@ -335,8 +350,12 @@ class AuthManager:
         tokens are also short-lived (days, not months) and this is a
         single-process LAN device, not a distributed system."""
         try:
-            payload = jwt.decode(refresh_token, self._secret, algorithms=["HS256"],
-                                  options={"verify_exp": False})
+            payload = jwt.decode(
+                refresh_token,
+                self._secret,
+                algorithms=["HS256"],
+                options={"verify_exp": False},
+            )
             jti = payload.get("jti")
             if jti:
                 self._revoked_jti.add(jti)
@@ -348,9 +367,11 @@ class AuthManager:
 auth_manager: Optional[AuthManager] = None
 
 
-def init_auth_manager(access_token_minutes=DEFAULT_ACCESS_TOKEN_MINUTES,
-                       refresh_token_days=DEFAULT_REFRESH_TOKEN_DAYS,
-                       min_password_length=DEFAULT_MIN_PASSWORD_LENGTH) -> AuthManager:
+def init_auth_manager(
+    access_token_minutes=DEFAULT_ACCESS_TOKEN_MINUTES,
+    refresh_token_days=DEFAULT_REFRESH_TOKEN_DAYS,
+    min_password_length=DEFAULT_MIN_PASSWORD_LENGTH,
+) -> AuthManager:
     """Called once from api/app.py at startup, after reliability.yaml's
     `auth:` section has been read - mirrors how can_manager/modbus_manager
     pull their tuning from core.config.load_reliability_config(), except

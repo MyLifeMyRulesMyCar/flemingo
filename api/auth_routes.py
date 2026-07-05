@@ -24,7 +24,11 @@ from core.auth_manager import (
     UserNotFoundError,
     VALID_ROLES,
 )
-from api.auth_decorators import require_auth, require_role, _extract_token, _verify_and_set_g
+from api.auth_decorators import (
+    require_auth,
+    require_role,
+    _verify_and_set_g,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,11 +137,16 @@ def me():
         return jsonify(err[0]), err[1]
 
     user = g.current_user
-    return jsonify({
-        "username": user.get("sub"),
-        "role": user.get("role"),
-        "must_change_password": user.get("must_change_password", False),
-    }), 200
+    return (
+        jsonify(
+            {
+                "username": user.get("sub"),
+                "role": user.get("role"),
+                "must_change_password": user.get("must_change_password", False),
+            }
+        ),
+        200,
+    )
 
 
 # -------------------------------------------------------
@@ -211,7 +220,9 @@ def create_user():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    logger.info(f"Admin {g.current_user.get('sub')} created user '{username}' (role={role})")
+    logger.info(
+        f"Admin {g.current_user.get('sub')} created user '{username}' (role={role})"
+    )
     return jsonify({"message": "User created", "user": user}), 201
 
 

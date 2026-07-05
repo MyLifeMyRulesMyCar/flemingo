@@ -26,7 +26,12 @@ from typing import Dict, List, Optional
 import minimalmodbus
 import serial
 
-from core.resilience import CircuitBreaker, CircuitOpenError, retry_with_backoff, health_status
+from core.resilience import (
+    CircuitBreaker,
+    CircuitOpenError,
+    retry_with_backoff,
+    health_status,
+)
 from core.config import load_reliability_config
 
 logger = logging.getLogger(__name__)
@@ -61,12 +66,20 @@ _PARITY_MAP = {
 class ModbusDevice:
     """One configured Modbus RTU slave: a port + slave ID + serial params."""
 
-    def __init__(self, device_id, name, port, slave_id,
-                 baudrate=DEFAULT_BAUDRATE, parity=DEFAULT_PARITY,
-                 stopbits=DEFAULT_STOPBITS, timeout=DEFAULT_TIMEOUT):
+    def __init__(
+        self,
+        device_id,
+        name,
+        port,
+        slave_id,
+        baudrate=DEFAULT_BAUDRATE,
+        parity=DEFAULT_PARITY,
+        stopbits=DEFAULT_STOPBITS,
+        timeout=DEFAULT_TIMEOUT,
+    ):
         self.id = device_id
         self.name = name
-        self.port = port            # key into MODBUS_PORTS, e.g. "ttyUSB0"
+        self.port = port  # key into MODBUS_PORTS, e.g. "ttyUSB0"
         self.slave_id = slave_id
         self.baudrate = baudrate
         self.parity = parity
@@ -128,8 +141,8 @@ class ModbusManager:
         # device.connected flips to False.
         self._health_running = False
         self._health_thread = None
-        self._health_interval = 5       # seconds between checks
-        self._health_register = 0        # holding register to read as liveness probe
+        self._health_interval = 5  # seconds between checks
+        self._health_register = 0  # holding register to read as liveness probe
 
         health_status.update("modbus", "unknown", "No devices configured")
         self._start_health_check()
@@ -151,36 +164,48 @@ class ModbusManager:
 
         if breakers_open:
             health_status.update(
-                "modbus", "degraded",
-                f"{breakers_open}/{len(devices)} device(s) circuit-open"
+                "modbus",
+                "degraded",
+                f"{breakers_open}/{len(devices)} device(s) circuit-open",
             )
         elif connected == len(devices):
-            health_status.update("modbus", "healthy", f"All {len(devices)} device(s) connected")
+            health_status.update(
+                "modbus", "healthy", f"All {len(devices)} device(s) connected"
+            )
         elif connected == 0:
             health_status.update("modbus", "unhealthy", "No devices connected")
         else:
             health_status.update(
-                "modbus", "degraded",
-                f"{connected}/{len(devices)} device(s) connected"
+                "modbus", "degraded", f"{connected}/{len(devices)} device(s) connected"
             )
 
     # ----------------------------------------
     # Device registry
     # ----------------------------------------
-    def add_device(self, name, port, slave_id, baudrate=DEFAULT_BAUDRATE,
-                    parity=DEFAULT_PARITY, stopbits=DEFAULT_STOPBITS,
-                    timeout=DEFAULT_TIMEOUT) -> str:
+    def add_device(
+        self,
+        name,
+        port,
+        slave_id,
+        baudrate=DEFAULT_BAUDRATE,
+        parity=DEFAULT_PARITY,
+        stopbits=DEFAULT_STOPBITS,
+        timeout=DEFAULT_TIMEOUT,
+    ) -> str:
         if port not in MODBUS_PORTS:
             raise ValueError(f"Unknown port '{port}', known: {list(MODBUS_PORTS)}")
 
         with self._lock:
             device_id = f"dev{self._next_id}"
             self._next_id += 1
-            device = ModbusDevice(device_id, name, port, slave_id,
-                                   baudrate, parity, stopbits, timeout)
+            device = ModbusDevice(
+                device_id, name, port, slave_id, baudrate, parity, stopbits, timeout
+            )
             self.devices[device_id] = device
-            logger.info(f"Added Modbus device '{name}' (id={device_id}, "
-                        f"port={port}, slave={slave_id})")
+            logger.info(
+                f"Added Modbus device '{name}' (id={device_id}, "
+                f"port={port}, slave={slave_id})"
+            )
             self._refresh_health()
             return device_id
 
@@ -209,8 +234,10 @@ class ModbusManager:
 
         with self._lock:
             port_path = MODBUS_PORTS[device.port]["device"]
-            logger.info(f"Connecting to '{device.name}' on {port_path} "
-                        f"(slave={device.slave_id}, {device.baudrate}bps)...")
+            logger.info(
+                f"Connecting to '{device.name}' on {port_path} "
+                f"(slave={device.slave_id}, {device.baudrate}bps)..."
+            )
 
             @retry_with_backoff(
                 max_retries=self._retry_config["max_retries"],
@@ -305,7 +332,8 @@ class ModbusManager:
                     if not device.connected or not device.instrument:
                         continue
                     ok, _ = self._call_through_breaker(
-                        device, "health_check",
+                        device,
+                        "health_check",
                         lambda: device.instrument.read_register(
                             self._health_register, functioncode=3
                         ),
@@ -331,14 +359,16 @@ class ModbusManager:
         return device
 
     def _log_event(self, device, event_type, message, data=None):
-        self.log.append({
-            "timestamp": datetime.now().isoformat(),
-            "device_id": device.id,
-            "device_name": device.name,
-            "type": event_type,
-            "message": message,
-            "data": data,
-        })
+        self.log.append(
+            {
+                "timestamp": datetime.now().isoformat(),
+                "device_id": device.id,
+                "device_name": device.name,
+                "type": event_type,
+                "message": message,
+                "data": data,
+            }
+        )
 
     def _call_through_breaker(self, device: ModbusDevice, op_name: str, func):
         """
@@ -351,6 +381,7 @@ class ModbusManager:
         existing None/False-on-failure return shape rather than needing
         a try/except at every call site.
         """
+
         @device.breaker.call
         def _attempt():
             return func()
@@ -376,7 +407,8 @@ class ModbusManager:
     def read_holding_register(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
         ok, value = self._call_through_breaker(
-            device, f"holding register {address}",
+            device,
+            f"holding register {address}",
             lambda: device.instrument.read_register(address, functioncode=3),
         )
         if ok:
@@ -388,7 +420,8 @@ class ModbusManager:
     def write_holding_register(self, device_id, address, value) -> bool:
         device = self._require_connected(device_id)
         ok, _ = self._call_through_breaker(
-            device, f"write holding register {address}",
+            device,
+            f"write holding register {address}",
             lambda: device.instrument.write_register(address, value, functioncode=6),
         )
         if ok:
@@ -403,7 +436,8 @@ class ModbusManager:
     def read_input_register(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
         ok, value = self._call_through_breaker(
-            device, f"input register {address}",
+            device,
+            f"input register {address}",
             lambda: device.instrument.read_register(address, functioncode=4),
         )
         if ok:
@@ -418,7 +452,8 @@ class ModbusManager:
     def read_coil(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
         ok, value = self._call_through_breaker(
-            device, f"coil {address}",
+            device,
+            f"coil {address}",
             lambda: device.instrument.read_bit(address, functioncode=1),
         )
         if ok:
@@ -430,7 +465,8 @@ class ModbusManager:
     def write_coil(self, device_id, address, value) -> bool:
         device = self._require_connected(device_id)
         ok, _ = self._call_through_breaker(
-            device, f"write coil {address}",
+            device,
+            f"write coil {address}",
             lambda: device.instrument.write_bit(address, value, functioncode=5),
         )
         if ok:
@@ -445,7 +481,8 @@ class ModbusManager:
     def read_discrete_input(self, device_id, address) -> Optional[int]:
         device = self._require_connected(device_id)
         ok, value = self._call_through_breaker(
-            device, f"discrete input {address}",
+            device,
+            f"discrete input {address}",
             lambda: device.instrument.read_bit(address, functioncode=2),
         )
         if ok:
@@ -457,8 +494,15 @@ class ModbusManager:
     # ----------------------------------------
     # Slave scan
     # ----------------------------------------
-    def scan_port(self, port, start_id=1, end_id=10, baudrate=DEFAULT_BAUDRATE,
-                  register=0, functioncode=3) -> List[int]:
+    def scan_port(
+        self,
+        port,
+        start_id=1,
+        end_id=10,
+        baudrate=DEFAULT_BAUDRATE,
+        register=0,
+        functioncode=3,
+    ) -> List[int]:
         """Probe a range of slave IDs on a port by attempting a register read on each."""
         if port not in MODBUS_PORTS:
             raise ValueError(f"Unknown port '{port}'")

@@ -25,14 +25,15 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.logging_config import setup_logging
+
 setup_logging()
 
-from flask import Flask, jsonify, send_from_directory, request
-from flask_socketio import SocketIO, emit
+from flask import Flask, jsonify, send_from_directory
+from flask_socketio import SocketIO
 from flask_cors import CORS
 
 from core.io_manager import IOManager
-from core.can_manager import can_manager       # module-level singleton
+from core.can_manager import can_manager  # module-level singleton
 from core.modbus_manager import modbus_manager  # module-level singleton
 from core.state import state
 from daemon.daemon import PurpleIODaemon
@@ -97,8 +98,12 @@ io_manager = IOManager()
 # can_manager / modbus_manager are the singletons already created at
 # import time in their own modules - reuse them, don't re-instantiate.
 
-daemon = PurpleIODaemon(io_manager, poll_interval=0.1,
-                         can_manager=can_manager, modbus_manager=modbus_manager)
+daemon = PurpleIODaemon(
+    io_manager,
+    poll_interval=0.1,
+    can_manager=can_manager,
+    modbus_manager=modbus_manager,
+)
 
 set_io_manager(io_manager)
 set_can_manager(can_manager)
@@ -134,8 +139,10 @@ print("=" * 60)
 # ============================================
 _DASHBOARD_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "dashboard", "dist",
+    "dashboard",
+    "dist",
 )
+
 
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
@@ -143,6 +150,7 @@ def serve_dashboard(path):
     if path and os.path.isfile(os.path.join(_DASHBOARD_PATH, path)):
         return send_from_directory(_DASHBOARD_PATH, path)
     return send_from_directory(_DASHBOARD_PATH, "index.html")
+
 
 # ============================================
 # WebSocket: live CAN message broadcast
@@ -162,8 +170,10 @@ can_manager.subscribe(broadcast_can_message)
 # Handlers extracted to api/socket_handlers.py so they can be tested
 # independently with flask_socketio.test_client().
 # ============================================
-register_socket_handlers(socketio, state, io_manager, can_manager,
-                          _auth_mod)  # core.auth_manager module
+register_socket_handlers(
+    socketio, state, io_manager, can_manager, _auth_mod
+)  # core.auth_manager module
+
 
 # ============================================
 # Background broadcast thread
@@ -189,6 +199,7 @@ def background_broadcast():
                 try:
                     from core.system_metrics import collect_metrics
                     from core.mqtt_manager import mqtt_manager as _mm
+
                     m = collect_metrics(mqtt_manager=_mm)
                     socketio.emit("system_metrics", m, namespace="/")
                 except Exception:
@@ -212,16 +223,21 @@ def start_background_thread():
 # ============================================
 @app.get("/api/status")
 def status():
-    return jsonify({
-        "status": "ok",
-        "message": "PurpleIO API online",
-        "version": VERSION,
-        "websocket": "enabled",
-        "auth": "JWT - roles: viewer / operator / admin",
-        "validation": "Phase 7 - all route bodies validated",
-        "mqtt": "Phase 8 - CAN / Modbus / IO bridges (POST /api/mqtt/connect to activate)",
-        "backup": "Phase 9 - GET /api/system/backup, POST /api/system/restore",
-    })
+    return jsonify(
+        {
+            "status": "ok",
+            "message": "PurpleIO API online",
+            "version": VERSION,
+            "websocket": "enabled",
+            "auth": "JWT - roles: viewer / operator / admin",
+            "validation": "Phase 7 - all route bodies validated",
+            "mqtt": (
+                "Phase 8 - CAN / Modbus / IO bridges "
+                "(POST /api/mqtt/connect to activate)"
+            ),
+            "backup": "Phase 9 - GET /api/system/backup, POST /api/system/restore",
+        }
+    )
 
 
 # ============================================
@@ -240,6 +256,7 @@ def signal_handler(sig, frame):
         pass
     try:
         from core.mqtt_manager import mqtt_manager as _mm
+
         if _mm:
             for b in (_mm.can_bridge, _mm.modbus_bridge, _mm.io_bridge):
                 if b and b.running:
@@ -265,8 +282,8 @@ if __name__ == "__main__":
 
     print(f"📡 HTTP API:  http://{HOST}:{PORT}")
     print(f"🔌 WebSocket: ws://{HOST}:{PORT}")
-    print(f"🔑 Auth:      JWT (login at POST /api/auth/login)")
-    print(f"   Roles:     viewer < operator < admin")
+    print("🔑 Auth:      JWT (login at POST /api/auth/login)")
+    print("   Roles:     viewer < operator < admin")
     print("=" * 60)
 
     socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)

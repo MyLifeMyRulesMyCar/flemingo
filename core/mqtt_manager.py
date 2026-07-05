@@ -25,11 +25,14 @@ logger = logging.getLogger(__name__)
 
 try:
     import paho.mqtt.client as _mqtt_lib
+
     _PAHO_AVAILABLE = True
 except ImportError:
     _PAHO_AVAILABLE = False
-    logger.warning("paho-mqtt not installed — MQTT bridge unavailable. "
-                   "Run: pip install paho-mqtt")
+    logger.warning(
+        "paho-mqtt not installed — MQTT bridge unavailable. "
+        "Run: pip install paho-mqtt"
+    )
 
 
 class MQTTConnectionError(Exception):
@@ -57,8 +60,8 @@ class MQTTManager:
     """
 
     def __init__(self):
-        self._client:  Optional[object] = None
-        self._lock     = threading.RLock()
+        self._client: Optional[object] = None
+        self._lock = threading.RLock()
         self._connected = False
 
         # Registered topic patterns → callbacks
@@ -70,31 +73,38 @@ class MQTTManager:
         self._broker_config: dict = {}
 
         # Bridge references — set by configure_bridges()
-        self.can_bridge    = None
+        self.can_bridge = None
         self.modbus_bridge = None
-        self.io_bridge     = None
+        self.io_bridge = None
 
         self.stats = {
             "messages_published": 0,
-            "messages_received":  0,
-            "reconnects":         0,
-            "connected_at":       None,
-            "disconnected_at":    None,
+            "messages_received": 0,
+            "reconnects": 0,
+            "connected_at": None,
+            "disconnected_at": None,
         }
 
     # ----------------------------------------------------------------
     # Bridge wiring
     # ----------------------------------------------------------------
     def configure_bridges(self, can_bridge, modbus_bridge, io_bridge):
-        self.can_bridge    = can_bridge
+        self.can_bridge = can_bridge
         self.modbus_bridge = modbus_bridge
-        self.io_bridge     = io_bridge
+        self.io_bridge = io_bridge
 
     # ----------------------------------------------------------------
     # Broker lifecycle
     # ----------------------------------------------------------------
-    def connect(self, host: str, port: int = 1883, username: str = None,
-                password: str = None, client_id: str = None, keepalive: int = 60):
+    def connect(
+        self,
+        host: str,
+        port: int = 1883,
+        username: str = None,
+        password: str = None,
+        client_id: str = None,
+        keepalive: int = 60,
+    ):
         if not _PAHO_AVAILABLE:
             raise MQTTConnectionError(
                 "paho-mqtt is not installed. Run: pip install paho-mqtt"
@@ -107,25 +117,25 @@ class MQTTManager:
                 )
 
             client_id = client_id or f"flemingo-{int(time.time())}"
-            client    = _mqtt_lib.Client(client_id=client_id)
+            client = _mqtt_lib.Client(client_id=client_id)
 
             if username:
                 client.username_pw_set(username, password or "")
 
             # Paho will call these from its own network thread
-            client.on_connect    = self._on_connect
+            client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect
-            client.on_message    = self._on_message
+            client.on_message = self._on_message
 
             # Automatic reconnect with exponential backoff (1s → 120s)
             client.reconnect_delay_set(min_delay=1, max_delay=120)
 
             self._broker_config = {
-                "host":      host,
-                "port":      port,
+                "host": host,
+                "port": port,
                 "client_id": client_id,
                 "keepalive": keepalive,
-                "has_auth":  bool(username),
+                "has_auth": bool(username),
             }
             self._client = client
 
@@ -146,7 +156,7 @@ class MQTTManager:
             if self._client is None:
                 return
             client = self._client
-            self._client    = None
+            self._client = None
             self._connected = False
 
         try:
@@ -161,8 +171,9 @@ class MQTTManager:
     # ----------------------------------------------------------------
     # Publish
     # ----------------------------------------------------------------
-    def publish(self, topic: str, payload: dict, qos: int = 0,
-                retain: bool = False) -> bool:
+    def publish(
+        self, topic: str, payload: dict, qos: int = 0, retain: bool = False
+    ) -> bool:
         """
         Publish a dict as JSON to `topic`.
         Returns True on success, False if not connected or paho errors.
@@ -175,7 +186,7 @@ class MQTTManager:
 
         try:
             payload_str = json.dumps(payload)
-            result      = client.publish(topic, payload_str, qos=qos, retain=retain)
+            result = client.publish(topic, payload_str, qos=qos, retain=retain)
             if result.rc == 0:
                 self.stats["messages_published"] += 1
                 return True
@@ -257,7 +268,7 @@ class MQTTManager:
             logger.info("MQTT disconnected cleanly")
 
     def _on_message(self, client, userdata, message):
-        topic       = message.topic
+        topic = message.topic
         payload_str = message.payload.decode("utf-8", errors="replace")
         self.stats["messages_received"] += 1
 
@@ -291,15 +302,15 @@ class MQTTManager:
           #  matches zero or more remaining levels (must be last segment)
         """
         pattern_parts = pattern.split("/")
-        topic_parts   = topic.split("/")
+        topic_parts = topic.split("/")
 
-        pi = 0   # pattern index
-        ti = 0   # topic index
+        pi = 0  # pattern index
+        ti = 0  # topic index
 
         while pi < len(pattern_parts):
             pp = pattern_parts[pi]
             if pp == "#":
-                return True   # matches anything remaining
+                return True  # matches anything remaining
             if ti >= len(topic_parts):
                 return False
             if pp != "+" and pp != topic_parts[ti]:
@@ -315,19 +326,21 @@ class MQTTManager:
     def get_status(self) -> dict:
         with self._lock:
             broker = dict(self._broker_config)
-            stats  = dict(self.stats)
+            stats = dict(self.stats)
             connected = self._connected
             sub_count = len(self._subscriptions)
 
         return {
-            "connected":          connected,
-            "broker":             broker,
+            "connected": connected,
+            "broker": broker,
             "active_subscriptions": sub_count,
-            "stats":              stats,
+            "stats": stats,
             "bridges": {
-                "can":    self.can_bridge.get_status()    if self.can_bridge    else None,
-                "modbus": self.modbus_bridge.get_status() if self.modbus_bridge else None,
-                "io":     self.io_bridge.get_status()     if self.io_bridge     else None,
+                "can": self.can_bridge.get_status() if self.can_bridge else None,
+                "modbus": (
+                    self.modbus_bridge.get_status() if self.modbus_bridge else None
+                ),
+                "io": self.io_bridge.get_status() if self.io_bridge else None,
             },
             "paho_available": _PAHO_AVAILABLE,
         }
@@ -339,25 +352,26 @@ class MQTTManager:
 mqtt_manager: Optional[MQTTManager] = None
 
 
-def init_mqtt_manager(can_mgr, modbus_mgr, io_mgr, state_obj,
-                      mqtt_cfg: dict) -> MQTTManager:
+def init_mqtt_manager(
+    can_mgr, modbus_mgr, io_mgr, state_obj, mqtt_cfg: dict
+) -> MQTTManager:
     """
     Called once from api/app.py at startup.
 
     Imports bridge classes here (not at module level) to avoid circular
     imports — bridges import from core/, not from mqtt_manager.
     """
-    from core.bridges.can_bridge    import CANBridge
+    from core.bridges.can_bridge import CANBridge
     from core.bridges.modbus_bridge import ModbusBridge
-    from core.bridges.io_bridge     import IOBridge
+    from core.bridges.io_bridge import IOBridge
 
     global mqtt_manager
     mqtt_manager = MQTTManager()
 
     bridge_cfg = mqtt_cfg.get("bridges", {})
-    can_bridge    = CANBridge(mqtt_manager, can_mgr,    bridge_cfg.get("can",    {}))
+    can_bridge = CANBridge(mqtt_manager, can_mgr, bridge_cfg.get("can", {}))
     modbus_bridge = ModbusBridge(mqtt_manager, modbus_mgr, bridge_cfg.get("modbus", {}))
-    io_bridge     = IOBridge(mqtt_manager, io_mgr, state_obj, bridge_cfg.get("io", {}))
+    io_bridge = IOBridge(mqtt_manager, io_mgr, state_obj, bridge_cfg.get("io", {}))
 
     mqtt_manager.configure_bridges(can_bridge, modbus_bridge, io_bridge)
     logger.info("MQTT manager initialised (not yet connected to broker)")

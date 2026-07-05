@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "config", "reliability.yaml",
+    "config",
+    "reliability.yaml",
 )
 
 DEFAULTS = {
@@ -74,13 +75,18 @@ def load_reliability_config(path: str = None, force_reload: bool = False) -> dic
     if os.path.exists(path):
         try:
             import yaml
+
             with open(path, "r") as f:
                 loaded = yaml.safe_load(f) or {}
         except ImportError:
-            logger.warning("PyYAML not installed - using built-in reliability defaults. "
-                            "Run `pip install pyyaml` to use config/reliability.yaml.")
+            logger.warning(
+                "PyYAML not installed - using built-in reliability defaults. "
+                "Run `pip install pyyaml` to use config/reliability.yaml."
+            )
         except Exception as e:
-            logger.warning(f"Could not parse {path} ({e}) - using built-in reliability defaults")
+            logger.warning(
+                f"Could not parse {path} ({e}) - using built-in reliability defaults"
+            )
     else:
         logger.info(f"No reliability config at {path} - using built-in defaults")
 
@@ -91,7 +97,8 @@ def load_reliability_config(path: str = None, force_reload: bool = False) -> dic
 # ─── MQTT config ─────────────────────────────────────────────────────
 _MQTT_DEFAULT_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "config", "mqtt.yaml",
+    "config",
+    "mqtt.yaml",
 )
 
 _MQTT_DEFAULTS = {
@@ -148,6 +155,7 @@ def load_mqtt_config(path=None, force_reload=False):
     if os.path.exists(path):
         try:
             import yaml
+
             with open(path, "r") as f:
                 loaded = yaml.safe_load(f) or {}
         except ImportError:
@@ -160,7 +168,7 @@ def load_mqtt_config(path=None, force_reload=False):
     merged = _deep_merge(_MQTT_DEFAULTS, loaded)
 
     # Resolve {prefix} and {device_id} in every topic string
-    prefix    = merged["bridges"]["prefix"]
+    prefix = merged["bridges"]["prefix"]
     device_id = merged["bridges"]["device_id"]
 
     def _resolve(v):

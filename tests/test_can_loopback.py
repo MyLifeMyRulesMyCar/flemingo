@@ -58,7 +58,7 @@ def main():
         if buf:
             rx = mcp.read_message(buf)
             print(f"📥 RX: {rx}")
-            match = (rx.can_id == tx.can_id and rx.data[:rx.dlc] == tx.data[:tx.dlc])
+            match = rx.can_id == tx.can_id and rx.data[: rx.dlc] == tx.data[: tx.dlc]
             if match:
                 print("\n✅ PASSED - SPI wiring and chip logic are good.")
                 print("   Safe to move on to wiring a real CAN_H/CAN_L bus.")

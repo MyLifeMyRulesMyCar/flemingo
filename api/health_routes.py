@@ -36,11 +36,13 @@ def set_managers(io_manager, can_manager, modbus_manager, watchdog=None):
 @health_api.route("/api/health", methods=["GET"])
 def health():
     """Basic liveness check - always 200 if the process is up."""
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "uptime": int(time.time() - _start_time),
-    })
+    return jsonify(
+        {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "uptime": int(time.time() - _start_time),
+        }
+    )
 
 
 @health_api.route("/api/health/detailed", methods=["GET"])
@@ -56,13 +58,17 @@ def health_detailed():
         # (updated by can_manager/modbus_manager on connect/disconnect/
         # reconnect) - falls back to "healthy" if nothing's reported in
         # yet, same as the pre-Phase-5 behavior.
-        "status": health_status.get_overall_status() if health_status.components else "healthy",
+        "status": (
+            health_status.get_overall_status()
+            if health_status.components
+            else "healthy"
+        ),
         "timestamp": datetime.now().isoformat(),
         "uptime": int(time.time() - _start_time),
         "gpio": {
             "simulation": io_status["simulation"],
             "note": "simulation=true means GPIO permissions weren't applied "
-                    "(sudo chmod 666 /dev/gpiochip1 /dev/gpiochip3 /dev/gpiochip4)",
+            "(sudo chmod 666 /dev/gpiochip1 /dev/gpiochip3 /dev/gpiochip4)",
         },
         "can": {
             "connected": can_status["connected"],

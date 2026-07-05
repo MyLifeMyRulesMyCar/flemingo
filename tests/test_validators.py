@@ -10,14 +10,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from api.validators import (
     ValidationError,
-    parse_int, parse_int_or_hex, parse_bool, require_fields,
-    validate_can_bitrate, validate_can_crystal,
-    validate_can_id, validate_can_payload, validate_count,
-    validate_modbus_slave_id, validate_modbus_address,
-    validate_modbus_register_value, validate_modbus_coil_value,
-    validate_modbus_baudrate, validate_modbus_parity,
-    validate_modbus_stopbits, validate_modbus_port,
-    validate_modbus_scan_range, validate_device_name,
+    parse_int,
+    parse_int_or_hex,
+    parse_bool,
+    require_fields,
+    validate_can_bitrate,
+    validate_can_crystal,
+    validate_can_id,
+    validate_can_payload,
+    validate_count,
+    validate_modbus_slave_id,
+    validate_modbus_address,
+    validate_modbus_register_value,
+    validate_modbus_coil_value,
+    validate_modbus_baudrate,
+    validate_modbus_parity,
+    validate_modbus_stopbits,
+    validate_modbus_port,
+    validate_modbus_scan_range,
+    validate_device_name,
 )
 
 
@@ -67,14 +78,14 @@ def test_parse_int_or_hex():
 # parse_bool
 # ─────────────────────────────────────────────────
 def test_parse_bool():
-    assert parse_bool(True, "x") == True
-    assert parse_bool(False, "x") == False
-    assert parse_bool(1, "x") == True
-    assert parse_bool(0, "x") == False
-    assert parse_bool("true", "x") == True
-    assert parse_bool("False", "x") == False
-    assert parse_bool("1", "x") == True
-    assert parse_bool("0", "x") == False
+    assert parse_bool(True, "x") is True
+    assert parse_bool(False, "x") is False
+    assert parse_bool(1, "x") is True
+    assert parse_bool(0, "x") is False
+    assert parse_bool("true", "x") is True
+    assert parse_bool("False", "x") is False
+    assert parse_bool("1", "x") is True
+    assert parse_bool("0", "x") is False
 
     with pytest.raises(ValidationError):
         parse_bool("yes_please", "x")
@@ -86,7 +97,7 @@ def test_parse_bool():
 # require_fields
 # ─────────────────────────────────────────────────
 def test_require_fields():
-    require_fields({"a": 1, "b": 2}, "a", "b")        # no error
+    require_fields({"a": 1, "b": 2}, "a", "b")  # no error
 
     with pytest.raises(ValidationError):
         require_fields({"a": 1}, "a", "b")
@@ -154,10 +165,10 @@ def test_validate_can_payload():
     assert validate_can_payload([]) == []
     assert validate_can_payload([0, 255]) == [0, 255]
     assert validate_can_payload(["0xFF", 0]) == [255, 0], "hex strings in list"
-    assert validate_can_payload([1]*8) == [1]*8, "exactly 8 bytes"
+    assert validate_can_payload([1] * 8) == [1] * 8, "exactly 8 bytes"
 
     with pytest.raises(ValidationError):
-        validate_can_payload([1]*9)
+        validate_can_payload([1] * 9)
     with pytest.raises(ValidationError):
         validate_can_payload([256])
     with pytest.raises(ValidationError):
@@ -307,8 +318,8 @@ def test_validate_modbus_port():
 # Modbus: scan range
 # ─────────────────────────────────────────────────
 def test_validate_modbus_scan_range():
-    validate_modbus_scan_range(1, 10)    # valid, no error
-    validate_modbus_scan_range(5, 5)     # single-ID scan, valid
+    validate_modbus_scan_range(1, 10)  # valid, no error
+    validate_modbus_scan_range(5, 5)  # single-ID scan, valid
 
     with pytest.raises(ValidationError):
         validate_modbus_scan_range(10, 1)

@@ -5,10 +5,11 @@
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 @pytest.fixture
@@ -16,6 +17,7 @@ def sim_io():
     """IOManager forced into simulation mode regardless of gpiod availability."""
     with patch("gpiod.Chip", side_effect=OSError("mock — no hardware")):
         from core.io_manager import IOManager
+
         io = IOManager()
         io._sim_di = [0, 0, 0, 0]
         io._sim_do = [0, 0, 0, 0]
@@ -58,5 +60,6 @@ class TestIOManagerSimulation:
 
     def test_channel_lists_exist(self, sim_io):
         from core.io_manager import DI_CHANNELS, DO_CHANNELS
+
         assert len(DI_CHANNELS) == 4
         assert len(DO_CHANNELS) == 4

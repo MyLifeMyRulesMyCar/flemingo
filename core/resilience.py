@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 # Circuit Breaker
 # ============================================
 class CircuitState(Enum):
-    CLOSED = "closed"        # Normal operation
-    OPEN = "open"             # Failing, block calls
-    HALF_OPEN = "half_open"   # Testing recovery
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing, block calls
+    HALF_OPEN = "half_open"  # Testing recovery
 
 
 class CircuitBreaker:
@@ -58,8 +58,13 @@ class CircuitBreaker:
             return _attempt()
     """
 
-    def __init__(self, failure_threshold=5, timeout=60,
-                 expected_exception=Exception, name="unnamed"):
+    def __init__(
+        self,
+        failure_threshold=5,
+        timeout=60,
+        expected_exception=Exception,
+        name="unnamed",
+    ):
         self.failure_threshold = failure_threshold
         self.timeout = timeout
         self.expected_exception = expected_exception
@@ -72,15 +77,20 @@ class CircuitBreaker:
 
     def call(self, func):
         """Decorator that wraps `func` with this breaker's gating logic."""
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             with self.lock:
                 if self.state == CircuitState.OPEN:
                     if self._should_attempt_reset():
-                        logger.info(f"[{self.name}] circuit breaker: HALF_OPEN (testing recovery)")
+                        logger.info(
+                            f"[{self.name}] circuit breaker: HALF_OPEN (testing recovery)"
+                        )
                         self.state = CircuitState.HALF_OPEN
                     else:
-                        remaining = self.timeout - (time.time() - self.last_failure_time)
+                        remaining = self.timeout - (
+                            time.time() - self.last_failure_time
+                        )
                         raise CircuitOpenError(
                             f"Circuit breaker '{self.name}' is open, retry in {max(0, int(remaining))}s"
                         )
@@ -114,10 +124,14 @@ class CircuitBreaker:
 
             if self.failure_count >= self.failure_threshold:
                 if self.state != CircuitState.OPEN:
-                    logger.warning(f"[{self.name}] circuit breaker: OPEN ({self.failure_count} failures)")
+                    logger.warning(
+                        f"[{self.name}] circuit breaker: OPEN ({self.failure_count} failures)"
+                    )
                 self.state = CircuitState.OPEN
             else:
-                logger.warning(f"[{self.name}] failure {self.failure_count}/{self.failure_threshold}")
+                logger.warning(
+                    f"[{self.name}] failure {self.failure_count}/{self.failure_threshold}"
+                )
 
     def reset(self):
         """Manually force the breaker back to CLOSED (e.g. after a manual reconnect)."""
@@ -136,21 +150,28 @@ class CircuitBreaker:
                 "failure_threshold": self.failure_threshold,
                 "last_failure": (
                     datetime.fromtimestamp(self.last_failure_time).isoformat()
-                    if self.last_failure_time else None
+                    if self.last_failure_time
+                    else None
                 ),
             }
 
 
 class CircuitOpenError(Exception):
     """Raised when a call is rejected because its circuit breaker is OPEN."""
+
     pass
 
 
 # ============================================
 # Retry with exponential backoff
 # ============================================
-def retry_with_backoff(max_retries=3, initial_delay=1, max_delay=30,
-                        exponential_base=2, expected_exception=Exception):
+def retry_with_backoff(
+    max_retries=3,
+    initial_delay=1,
+    max_delay=30,
+    exponential_base=2,
+    expected_exception=Exception,
+):
     """
     Retry decorator with exponential backoff. Intended for one-shot
     operations like opening a serial port or an SPI device - NOT for
@@ -163,6 +184,7 @@ def retry_with_backoff(max_retries=3, initial_delay=1, max_delay=30,
         def open_port():
             ...
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -176,7 +198,9 @@ def retry_with_backoff(max_retries=3, initial_delay=1, max_delay=30,
                     last_exception = e
 
                     if attempt == max_retries:
-                        logger.error(f"{func.__name__}: all {max_retries} retries failed")
+                        logger.error(
+                            f"{func.__name__}: all {max_retries} retries failed"
+                        )
                         raise
 
                     wait_time = min(delay, max_delay)
@@ -190,6 +214,7 @@ def retry_with_backoff(max_retries=3, initial_delay=1, max_delay=30,
             raise last_exception
 
         return wrapper
+
     return decorator
 
 
@@ -203,6 +228,7 @@ def timeout(seconds=10):
     operations that can genuinely hang (e.g. a serial read with no
     response), not in hot paths.
     """
+
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -229,6 +255,7 @@ def timeout(seconds=10):
             return result[0]
 
         return wrapper
+
     return decorator
 
 
@@ -247,7 +274,9 @@ class HealthStatus:
         self.components = {}
         self.lock = threading.RLock()
 
-    def update(self, component: str, status: str, message: str = "", details: dict = None):
+    def update(
+        self, component: str, status: str, message: str = "", details: dict = None
+    ):
         """status should be one of: 'healthy' | 'degraded' | 'unhealthy'."""
         with self.lock:
             self.components[component] = {
@@ -260,10 +289,13 @@ class HealthStatus:
     def get_status(self, component: str = None):
         with self.lock:
             if component:
-                return self.components.get(component, {
-                    "status": "unknown",
-                    "message": "Component not registered",
-                })
+                return self.components.get(
+                    component,
+                    {
+                        "status": "unknown",
+                        "message": "Component not registered",
+                    },
+                )
             return dict(self.components)
 
     def is_healthy(self, component: str = None) -> bool:

@@ -6,7 +6,7 @@
 
 from flask import Blueprint, jsonify, request
 from core.state import state
-from api.auth_decorators import require_auth, require_role
+from api.auth_decorators import require_role
 
 io_api = Blueprint("io_api", __name__)
 
@@ -24,10 +24,12 @@ def set_io_manager(manager):
 @require_role("viewer")
 def get_io():
     """Current DI/DO state."""
-    return jsonify({
-        "di": state.get_di(),
-        "do": state.get_do(),
-    })
+    return jsonify(
+        {
+            "di": state.get_di(),
+            "do": state.get_do(),
+        }
+    )
 
 
 @io_api.route("/api/io/do/<int:channel>", methods=["POST"])

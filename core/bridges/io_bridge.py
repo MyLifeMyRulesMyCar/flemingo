@@ -23,8 +23,8 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-_DI_CHANNELS  = 4   # Purple Pi OH2: DI0–DI3
-_DO_CHANNELS  = 4   # Purple Pi OH2: DO0–DO3
+_DI_CHANNELS = 4  # Purple Pi OH2: DI0–DI3
+_DO_CHANNELS = 4  # Purple Pi OH2: DO0–DO3
 
 
 class IOBridge:
@@ -39,14 +39,14 @@ class IOBridge:
     """
 
     def __init__(self, mqtt_manager, io_manager, state, config: dict):
-        self._mqtt       = mqtt_manager
-        self._io         = io_manager
-        self._state      = state
-        self._lock       = threading.Lock()
+        self._mqtt = mqtt_manager
+        self._io = io_manager
+        self._state = state
+        self._lock = threading.Lock()
 
-        self.poll_interval_ms   = config.get("poll_interval_ms", 100)
-        self.publish_on_change  = config.get("publish_on_change", True)
-        self.publish_topic_di   = config.get(
+        self.poll_interval_ms = config.get("poll_interval_ms", 100)
+        self.publish_on_change = config.get("publish_on_change", True)
+        self.publish_topic_di = config.get(
             "publish_topic_di", "flemingo/edge-01/io/di/{channel}"
         )
         self.subscribe_topic_do = config.get(
@@ -54,29 +54,36 @@ class IOBridge:
         )
         self.qos = config.get("qos", 1)
 
-        self.running      = False
+        self.running = False
         self._poll_thread = None
-        self._last_di     = [None] * _DI_CHANNELS
+        self._last_di = [None] * _DI_CHANNELS
 
         self.stats = {
             "di_published": 0,
-            "do_received":  0,
-            "errors":       0,
-            "started_at":   None,
+            "do_received": 0,
+            "errors": 0,
+            "started_at": None,
         }
 
     # ----------------------------------------------------------------
     # Lifecycle
     # ----------------------------------------------------------------
-    def start(self, poll_interval_ms: int = None, publish_on_change: bool = None,
-              qos: int = None):
+    def start(
+        self,
+        poll_interval_ms: int = None,
+        publish_on_change: bool = None,
+        qos: int = None,
+    ):
         with self._lock:
             if self.running:
                 raise RuntimeError("IO bridge is already running")
 
-            if poll_interval_ms  is not None: self.poll_interval_ms  = poll_interval_ms
-            if publish_on_change is not None: self.publish_on_change = publish_on_change
-            if qos               is not None: self.qos               = qos
+            if poll_interval_ms is not None:
+                self.poll_interval_ms = poll_interval_ms
+            if publish_on_change is not None:
+                self.publish_on_change = publish_on_change
+            if qos is not None:
+                self.qos = qos
 
             # Subscribe to DO command wildcard
             self._mqtt.register_subscription(
@@ -140,9 +147,9 @@ class IOBridge:
 
             topic = self.publish_topic_di.replace("{channel}", str(ch))
             payload = {
-                "value":     val,
-                "channel":   ch,
-                "name":      f"DI{ch}",
+                "value": val,
+                "channel": ch,
+                "name": f"DI{ch}",
                 "timestamp": now,
             }
             ok = self._mqtt.publish(topic, payload, qos=self.qos)
@@ -170,10 +177,12 @@ class IOBridge:
             channel = int(parts[-2])
 
             if not (0 <= channel < _DO_CHANNELS):
-                raise ValueError(f"DO channel must be 0–{_DO_CHANNELS - 1}, got {channel}")
+                raise ValueError(
+                    f"DO channel must be 0–{_DO_CHANNELS - 1}, got {channel}"
+                )
 
             payload = json.loads(payload_str)
-            value   = int(payload.get("value", 0))
+            value = int(payload.get("value", 0))
             if value not in (0, 1):
                 raise ValueError(f"DO value must be 0 or 1, got {value}")
 
@@ -194,20 +203,27 @@ class IOBridge:
     def get_status(self) -> dict:
         last_di = list(self._last_di)
         return {
-            "running":           self.running,
-            "poll_interval_ms":  self.poll_interval_ms,
+            "running": self.running,
+            "poll_interval_ms": self.poll_interval_ms,
             "publish_on_change": self.publish_on_change,
-            "publish_topic_di":  self.publish_topic_di,
+            "publish_topic_di": self.publish_topic_di,
             "subscribe_topic_do": self.subscribe_topic_do,
-            "qos":               self.qos,
-            "last_di":           last_di,
-            "stats":             dict(self.stats),
+            "qos": self.qos,
+            "last_di": last_di,
+            "stats": dict(self.stats),
         }
 
-    def update_config(self, poll_interval_ms: int = None,
-                      publish_on_change: bool = None, qos: int = None):
+    def update_config(
+        self,
+        poll_interval_ms: int = None,
+        publish_on_change: bool = None,
+        qos: int = None,
+    ):
         if self.running:
             raise RuntimeError("Stop the bridge before changing its config")
-        if poll_interval_ms  is not None: self.poll_interval_ms  = poll_interval_ms
-        if publish_on_change is not None: self.publish_on_change = publish_on_change
-        if qos               is not None: self.qos               = qos
+        if poll_interval_ms is not None:
+            self.poll_interval_ms = poll_interval_ms
+        if publish_on_change is not None:
+            self.publish_on_change = publish_on_change
+        if qos is not None:
+            self.qos = qos

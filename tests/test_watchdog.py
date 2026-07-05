@@ -6,7 +6,6 @@ Pure logic, no hardware needed. Run with pytest:
     pytest tests/test_watchdog.py
 """
 
-import pytest
 import sys
 import os
 import time
@@ -57,14 +56,22 @@ def test_component_health_check_failure():
     healthy = {"value": True}
     wd.register_component("fake_subsystem", lambda: healthy["value"])
 
-    assert wd.check_component_health("fake_subsystem"), "registered component reports healthy"
+    assert wd.check_component_health(
+        "fake_subsystem"
+    ), "registered component reports healthy"
 
     healthy["value"] = False
-    assert wd.check_component_health("fake_subsystem") is False, "registered component reports unhealthy after state change"
+    assert (
+        wd.check_component_health("fake_subsystem") is False
+    ), "registered component reports unhealthy after state change"
 
     report = wd.get_health_report()
-    assert "fake_subsystem" in report["components"], "health report includes the registered component"
-    assert report["components"]["fake_subsystem"]["status"] == "unhealthy", "health report reflects unhealthy status"
+    assert (
+        "fake_subsystem" in report["components"]
+    ), "health report includes the registered component"
+    assert (
+        report["components"]["fake_subsystem"]["status"] == "unhealthy"
+    ), "health report reflects unhealthy status"
 
 
 def test_component_health_check_exception_is_caught():
@@ -76,4 +83,6 @@ def test_component_health_check_exception_is_caught():
     wd.register_component("flaky", raises)
     result = wd.check_component_health("flaky")
     assert result is False, "exception in a health check is caught, not propagated"
-    assert wd.components["flaky"]["status"] == "error", "component status reflects the error"
+    assert (
+        wd.components["flaky"]["status"] == "error"
+    ), "component status reflects the error"

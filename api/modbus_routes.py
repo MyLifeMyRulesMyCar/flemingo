@@ -7,13 +7,20 @@ from flask import Blueprint, jsonify, request
 from core.modbus_manager import MODBUS_PORTS
 from api.auth_decorators import require_role
 from api.validators import (
-    ValidationError, parse_body, parse_int,
+    ValidationError,
+    parse_body,
+    parse_int,
     require_fields,
-    validate_modbus_slave_id, validate_modbus_address,
-    validate_modbus_register_value, validate_modbus_coil_value,
-    validate_modbus_baudrate, validate_modbus_parity,
-    validate_modbus_stopbits, validate_modbus_port,
-    validate_modbus_scan_range, validate_device_name,
+    validate_modbus_slave_id,
+    validate_modbus_address,
+    validate_modbus_register_value,
+    validate_modbus_coil_value,
+    validate_modbus_baudrate,
+    validate_modbus_parity,
+    validate_modbus_stopbits,
+    validate_modbus_port,
+    validate_modbus_scan_range,
+    validate_device_name,
     validate_count,
 )
 
@@ -53,16 +60,20 @@ def create_device():
         data = parse_body(request)
         require_fields(data, "name", "port", "slave_id")
 
-        name      = validate_device_name(data["name"])
-        port      = validate_modbus_port(data["port"], MODBUS_PORTS)
-        slave_id  = validate_modbus_slave_id(data["slave_id"])
-        baudrate  = validate_modbus_baudrate(data.get("baudrate", 115200))
-        parity    = validate_modbus_parity(data.get("parity", "N"))
-        stopbits  = validate_modbus_stopbits(data.get("stopbits", 1))
+        name = validate_device_name(data["name"])
+        port = validate_modbus_port(data["port"], MODBUS_PORTS)
+        slave_id = validate_modbus_slave_id(data["slave_id"])
+        baudrate = validate_modbus_baudrate(data.get("baudrate", 115200))
+        parity = validate_modbus_parity(data.get("parity", "N"))
+        stopbits = validate_modbus_stopbits(data.get("stopbits", 1))
 
         device_id = _modbus_manager.add_device(
-            name=name, port=port, slave_id=slave_id,
-            baudrate=baudrate, parity=parity, stopbits=stopbits,
+            name=name,
+            port=port,
+            slave_id=slave_id,
+            baudrate=baudrate,
+            parity=parity,
+            stopbits=stopbits,
         )
         return jsonify({"message": "Device added", "device_id": device_id}), 201
 
@@ -104,8 +115,8 @@ def read_register(device_id):
     address       — 0–65535
     function_code — 1 (coil) / 2 (discrete input) / 3 (holding) / 4 (input register)"""
     try:
-        data          = parse_body(request)
-        address       = validate_modbus_address(data.get("address", 0))
+        data = parse_body(request)
+        address = validate_modbus_address(data.get("address", 0))
         function_code = parse_int(data.get("function_code", 3), "function_code")
 
         if function_code == 3:
@@ -122,7 +133,9 @@ def read_register(device_id):
         if value is None:
             return jsonify({"error": "No response from device"}), 504
 
-        return jsonify({"address": address, "value": value, "function_code": function_code})
+        return jsonify(
+            {"address": address, "value": value, "function_code": function_code}
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -138,10 +151,10 @@ def write_register(device_id):
     function_code — 6 (holding register, value 0–65535)
                   / 5 (coil,             value 0 or 1)"""
     try:
-        data          = parse_body(request)
+        data = parse_body(request)
         require_fields(data, "value")
 
-        address       = validate_modbus_address(data.get("address", 0))
+        address = validate_modbus_address(data.get("address", 0))
         function_code = parse_int(data.get("function_code", 6), "function_code")
 
         if function_code == 6:
@@ -151,12 +164,19 @@ def write_register(device_id):
             value = validate_modbus_coil_value(data["value"])
             ok = _modbus_manager.write_coil(device_id, address, value)
         else:
-            return jsonify({"error": "function_code must be 5 (coil) or 6 (holding register)"}), 400
+            return (
+                jsonify(
+                    {"error": "function_code must be 5 (coil) or 6 (holding register)"}
+                ),
+                400,
+            )
 
         if not ok:
             return jsonify({"error": "No response from device"}), 504
 
-        return jsonify({"address": address, "value": value, "function_code": function_code})
+        return jsonify(
+            {"address": address, "value": value, "function_code": function_code}
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -171,10 +191,10 @@ def scan():
     Scans for responding slave IDs in the range [start_id, end_id].
     Both IDs must be 1–247 and start_id must be ≤ end_id."""
     try:
-        data     = parse_body(request)
-        port     = validate_modbus_port(data.get("port", "ttyUSB0"), MODBUS_PORTS)
+        data = parse_body(request)
+        port = validate_modbus_port(data.get("port", "ttyUSB0"), MODBUS_PORTS)
         start_id = validate_modbus_slave_id(data.get("start_id", 1))
-        end_id   = validate_modbus_slave_id(data.get("end_id", 10))
+        end_id = validate_modbus_slave_id(data.get("end_id", 10))
         baudrate = validate_modbus_baudrate(data.get("baudrate", 115200))
         validate_modbus_scan_range(start_id, end_id)
 

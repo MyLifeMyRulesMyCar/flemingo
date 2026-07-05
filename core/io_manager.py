@@ -11,22 +11,22 @@ import threading
 # Pin Map (Purple Pi OH2) - DO NOT EDIT unless your wiring changes
 # ============================================
 OUTPUT_PINS = {
-    'DO0': ('/dev/gpiochip1', 24),  # GPIO56, header pin 29
-    'DO1': ('/dev/gpiochip1', 25),  # GPIO57, header pin 31
-    'DO2': ('/dev/gpiochip1', 26),  # GPIO58, header pin 33
-    'DO3': ('/dev/gpiochip1', 27),  # GPIO59, header pin 35
+    "DO0": ("/dev/gpiochip1", 24),  # GPIO56, header pin 29
+    "DO1": ("/dev/gpiochip1", 25),  # GPIO57, header pin 31
+    "DO2": ("/dev/gpiochip1", 26),  # GPIO58, header pin 33
+    "DO3": ("/dev/gpiochip1", 27),  # GPIO59, header pin 35
 }
 
 INPUT_PINS = {
-    'DI0': ('/dev/gpiochip4', 4),   # GPIO132, header pin 32
-    'DI1': ('/dev/gpiochip4', 6),   # GPIO134, header pin 36
-    'DI2': ('/dev/gpiochip3', 2),   # GPIO98,  header pin 38
-    'DI3': ('/dev/gpiochip3', 3),   # GPIO99,  header pin 40
+    "DI0": ("/dev/gpiochip4", 4),  # GPIO132, header pin 32
+    "DI1": ("/dev/gpiochip4", 6),  # GPIO134, header pin 36
+    "DI2": ("/dev/gpiochip3", 2),  # GPIO98,  header pin 38
+    "DI3": ("/dev/gpiochip3", 3),  # GPIO99,  header pin 40
 }
 
 # Ordered channel lists so DI[0]/DO[0] map predictably to arrays/JSON
-DO_CHANNELS = ['DO0', 'DO1', 'DO2', 'DO3']
-DI_CHANNELS = ['DI0', 'DI1', 'DI2', 'DI3']
+DO_CHANNELS = ["DO0", "DO1", "DO2", "DO3"]
+DI_CHANNELS = ["DI0", "DI1", "DI2", "DI3"]
 
 
 class IOManager:
@@ -43,8 +43,8 @@ class IOManager:
 
     def __init__(self):
         self._hw_lock = threading.RLock()
-        self.requests_in = {}    # chip_path -> gpiod request object
-        self.requests_out = {}   # chip_path -> gpiod request object
+        self.requests_in = {}  # chip_path -> gpiod request object
+        self.requests_out = {}  # chip_path -> gpiod request object
         self.simulation = False
         self._sim_di = [0, 0, 0, 0]
         self._sim_do = [0, 0, 0, 0]

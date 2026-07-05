@@ -28,8 +28,9 @@ from core.can_manager import CANManager
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--send", nargs="+",
-        help="CAN_ID followed by data bytes in hex, e.g. --send 0x123 DE AD BE EF"
+        "--send",
+        nargs="+",
+        help="CAN_ID followed by data bytes in hex, e.g. --send 0x123 DE AD BE EF",
     )
     parser.add_argument("--listen-seconds", type=int, default=10)
     parser.add_argument("--bitrate", type=int, default=125_000)
@@ -51,7 +52,9 @@ def main():
         can_id = int(args.send[0], 16)
         data = [int(b, 16) for b in args.send[1:]]
         ok = mgr.send_message(can_id, data)
-        print(f"\nSend {'OK' if ok else 'FAILED'}: ID=0x{can_id:03X} data={[f'0x{b:02X}' for b in data]}")
+        print(
+            f"\nSend {'OK' if ok else 'FAILED'}: ID=0x{can_id:03X} data={[f'0x{b:02X}' for b in data]}"
+        )
 
     print(f"\nListening for {args.listen_seconds}s on the bus...")
     time.sleep(args.listen_seconds)
@@ -59,8 +62,10 @@ def main():
     print("\n--- Recent messages (newest last) ---")
     messages = mgr.get_recent_messages(50)
     if not messages:
-        print("(none received - check CAN_H/CAN_L wiring, termination resistors, "
-              "and that another node is actually transmitting)")
+        print(
+            "(none received - check CAN_H/CAN_L wiring, termination resistors, "
+            "and that another node is actually transmitting)"
+        )
     for entry in messages:
         print(entry)
 

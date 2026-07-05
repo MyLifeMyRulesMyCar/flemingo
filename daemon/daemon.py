@@ -37,8 +37,13 @@ class PurpleIODaemon:
     read-only by the watchdog's health checks.
     """
 
-    def __init__(self, io_manager, poll_interval: float = 0.1,
-                 can_manager=None, modbus_manager=None):
+    def __init__(
+        self,
+        io_manager,
+        poll_interval: float = 0.1,
+        can_manager=None,
+        modbus_manager=None,
+    ):
         self.manager = io_manager
         self.can_manager = can_manager
         self.modbus_manager = modbus_manager
@@ -49,7 +54,7 @@ class PurpleIODaemon:
         self.last_di = [0, 0, 0, 0]
         self._di_candidate = [0, 0, 0, 0]
         self._di_stable_count = [0, 0, 0, 0]
-        self.debounce_reads = 3   # ~300ms at 0.1s poll (3 reads × 0.1s)
+        self.debounce_reads = 3  # ~300ms at 0.1s poll (3 reads × 0.1s)
         self._di_initialized = False
         self.consecutive_errors = 0
         self.max_consecutive_errors = 10
@@ -102,8 +107,10 @@ class PurpleIODaemon:
                     logger.warning(f"Daemon: GPIO read error: {e}")
                     self.consecutive_errors += 1
                     if self.consecutive_errors >= self.max_consecutive_errors:
-                        logger.error(f"Daemon: too many consecutive GPIO errors "
-                                     f"({self.consecutive_errors})")
+                        logger.error(
+                            f"Daemon: too many consecutive GPIO errors "
+                            f"({self.consecutive_errors})"
+                        )
                     time.sleep(1)
                     continue
 
@@ -122,7 +129,10 @@ class PurpleIODaemon:
                         self._di_candidate[i] = val
                         self._di_stable_count[i] = 1
 
-                    if self._di_stable_count[i] >= self.debounce_reads and val != self.last_di[i]:
+                    if (
+                        self._di_stable_count[i] >= self.debounce_reads
+                        and val != self.last_di[i]
+                    ):
                         logger.info(f"Daemon: DI{i} changed {self.last_di[i]} -> {val}")
                         self.last_di[i] = val
 
@@ -138,7 +148,9 @@ class PurpleIODaemon:
 
     def start(self):
         self.watchdog.start()
-        self._thread = threading.Thread(target=self.loop, name="PurpleIO-Daemon", daemon=True)
+        self._thread = threading.Thread(
+            target=self.loop, name="PurpleIO-Daemon", daemon=True
+        )
         self._thread.start()
         logger.info("purpleio-daemon running...")
 

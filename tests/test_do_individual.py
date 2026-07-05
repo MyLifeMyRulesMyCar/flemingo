@@ -34,9 +34,11 @@ def main():
     status = mgr.get_status()
     print(f"Mode: {'SIMULATION' if status['simulation'] else 'HARDWARE'}\n")
 
-    if status['simulation']:
+    if status["simulation"]:
         print("⚠️  Running in simulation - no physical pins will toggle.")
-        print("   Check permissions: sudo chmod 666 /dev/gpiochip1 /dev/gpiochip3 /dev/gpiochip4\n")
+        print(
+            "   Check permissions: sudo chmod 666 /dev/gpiochip1 /dev/gpiochip3 /dev/gpiochip4\n"
+        )
 
     try:
         for ch, name in enumerate(DO_CHANNELS):

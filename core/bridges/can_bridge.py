@@ -35,35 +35,39 @@ class CANBridge:
     """
 
     def __init__(self, mqtt_manager, can_manager, config: dict):
-        self._mqtt  = mqtt_manager
-        self._can   = can_manager
-        self._lock  = threading.Lock()
+        self._mqtt = mqtt_manager
+        self._can = can_manager
+        self._lock = threading.Lock()
 
         # Topic config — overridable at start() time
-        self.publish_topic   = config.get("publish_topic",   "flemingo/edge-01/can/rx")
+        self.publish_topic = config.get("publish_topic", "flemingo/edge-01/can/rx")
         self.subscribe_topic = config.get("subscribe_topic", "flemingo/edge-01/can/tx")
-        self.qos             = config.get("qos", 0)
+        self.qos = config.get("qos", 0)
 
         self.running = False
-        self.stats   = {
-            "published": 0,   # CAN → MQTT
-            "received":  0,   # MQTT → CAN TX
-            "errors":    0,
+        self.stats = {
+            "published": 0,  # CAN → MQTT
+            "received": 0,  # MQTT → CAN TX
+            "errors": 0,
             "started_at": None,
         }
 
     # ----------------------------------------------------------------
     # Lifecycle
     # ----------------------------------------------------------------
-    def start(self, publish_topic: str = None, subscribe_topic: str = None,
-              qos: int = None):
+    def start(
+        self, publish_topic: str = None, subscribe_topic: str = None, qos: int = None
+    ):
         with self._lock:
             if self.running:
                 raise RuntimeError("CAN bridge is already running")
 
-            if publish_topic   is not None: self.publish_topic   = publish_topic
-            if subscribe_topic is not None: self.subscribe_topic = subscribe_topic
-            if qos             is not None: self.qos             = qos
+            if publish_topic is not None:
+                self.publish_topic = publish_topic
+            if subscribe_topic is not None:
+                self.subscribe_topic = subscribe_topic
+            if qos is not None:
+                self.qos = qos
 
             # Hook into CAN RX stream
             self._can.subscribe(self._on_can_rx)
@@ -99,10 +103,10 @@ class CANBridge:
         """
         try:
             payload = {
-                "can_id":    entry.get("can_id"),
-                "data":      entry.get("data", []),
-                "dlc":       entry.get("dlc", len(entry.get("data", []))),
-                "extended":  entry.get("extended", False),
+                "can_id": entry.get("can_id"),
+                "data": entry.get("data", []),
+                "dlc": entry.get("dlc", len(entry.get("data", []))),
+                "extended": entry.get("extended", False),
                 "timestamp": entry.get("timestamp", datetime.now().isoformat()),
             }
             ok = self._mqtt.publish(self.publish_topic, payload, qos=self.qos)
@@ -121,20 +125,22 @@ class CANBridge:
         Validates before calling can_manager to avoid corrupting the bus.
         """
         try:
-            payload  = json.loads(payload_str)
-            can_id   = payload.get("can_id")
-            data     = payload.get("data", [])
+            payload = json.loads(payload_str)
+            can_id = payload.get("can_id")
+            data = payload.get("data", [])
             extended = bool(payload.get("extended", False))
 
             if can_id is None:
                 raise ValueError("'can_id' is required")
 
             can_id = int(can_id, 0) if isinstance(can_id, str) else int(can_id)
-            data   = [int(b, 0) if isinstance(b, str) else int(b) for b in data]
+            data = [int(b, 0) if isinstance(b, str) else int(b) for b in data]
 
             max_id = 0x1FFFFFFF if extended else 0x7FF
             if not (0 <= can_id <= max_id):
-                raise ValueError(f"can_id {hex(can_id)} out of range for {'ext' if extended else 'std'} frame")
+                raise ValueError(
+                    f"can_id {hex(can_id)} out of range for {'ext' if extended else 'std'} frame"
+                )
             if len(data) > 8:
                 raise ValueError(f"CAN payload must be ≤8 bytes, got {len(data)}")
             if any(not (0 <= b <= 255) for b in data):
@@ -156,18 +162,22 @@ class CANBridge:
     # ----------------------------------------------------------------
     def get_status(self) -> dict:
         return {
-            "running":         self.running,
-            "publish_topic":   self.publish_topic,
+            "running": self.running,
+            "publish_topic": self.publish_topic,
             "subscribe_topic": self.subscribe_topic,
-            "qos":             self.qos,
-            "stats":           dict(self.stats),
+            "qos": self.qos,
+            "stats": dict(self.stats),
         }
 
-    def update_config(self, publish_topic: str = None, subscribe_topic: str = None,
-                      qos: int = None):
+    def update_config(
+        self, publish_topic: str = None, subscribe_topic: str = None, qos: int = None
+    ):
         """Update topic config. Bridge must be stopped before calling this."""
         if self.running:
             raise RuntimeError("Stop the bridge before changing its config")
-        if publish_topic   is not None: self.publish_topic   = publish_topic
-        if subscribe_topic is not None: self.subscribe_topic = subscribe_topic
-        if qos             is not None: self.qos             = qos
+        if publish_topic is not None:
+            self.publish_topic = publish_topic
+        if subscribe_topic is not None:
+            self.subscribe_topic = subscribe_topic
+        if qos is not None:
+            self.qos = qos

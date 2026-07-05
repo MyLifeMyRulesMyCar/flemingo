@@ -4,6 +4,7 @@
 
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -11,7 +12,6 @@ from unittest.mock import MagicMock
 from flask import Flask
 
 from api.io_routes import io_api, set_io_manager
-from core.state import ThreadSafeState
 
 
 class TestIORoutes:
@@ -28,8 +28,9 @@ class TestIORoutes:
         return c
 
     def test_get_io_requires_viewer(self, client):
-        resp = client.get("/api/io",
-                          headers={"Authorization": f"Bearer {client.tokens['viewer']}"})
+        resp = client.get(
+            "/api/io", headers={"Authorization": f"Bearer {client.tokens['viewer']}"}
+        )
         assert resp.status_code == 200
         assert "di" in resp.get_json()
 
@@ -38,19 +39,28 @@ class TestIORoutes:
         assert resp.status_code == 401
 
     def test_set_do_requires_operator(self, client):
-        resp = client.post("/api/io/do/0", json={"state": True},
-                           headers={"Authorization": f"Bearer {client.tokens['operator']}"})
+        resp = client.post(
+            "/api/io/do/0",
+            json={"state": True},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
         assert resp.status_code == 200
         assert resp.get_json()["channel"] == 0
         client.mock_io.write_output.assert_called_once_with(0, 1)
 
     def test_set_do_rejects_viewer(self, client):
-        resp = client.post("/api/io/do/0", json={"state": True},
-                           headers={"Authorization": f"Bearer {client.tokens['viewer']}"})
+        resp = client.post(
+            "/api/io/do/0",
+            json={"state": True},
+            headers={"Authorization": f"Bearer {client.tokens['viewer']}"},
+        )
         assert resp.status_code == 403
 
     def test_set_do_invalid_channel(self, client):
-        resp = client.post("/api/io/do/5", json={"state": True},
-                           headers={"Authorization": f"Bearer {client.tokens['operator']}"})
+        resp = client.post(
+            "/api/io/do/5",
+            json={"state": True},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
         assert resp.status_code == 400
         assert "Invalid channel" in resp.get_json()["error"]

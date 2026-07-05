@@ -35,11 +35,16 @@ from flask import Blueprint, jsonify, request
 from api.auth_decorators import require_role
 from api.validators import (
     ValidationError,
-    parse_body, parse_int, parse_bool,
-    validate_mqtt_host, validate_mqtt_port,
-    validate_mqtt_topic, validate_mqtt_qos,
-    validate_poll_interval_s, validate_poll_interval_ms,
-    validate_modbus_slave_id, validate_modbus_address,
+    parse_body,
+    parse_int,
+    parse_bool,
+    validate_mqtt_host,
+    validate_mqtt_port,
+    validate_mqtt_topic,
+    validate_mqtt_qos,
+    validate_poll_interval_s,
+    validate_poll_interval_ms,
+    validate_modbus_address,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +62,7 @@ def set_mqtt_manager(manager):
 # Broker lifecycle
 # ════════════════════════════════════════════════════════════════════
 
+
 @mqtt_api.route("/api/mqtt/connect", methods=["POST"])
 @require_role("operator")
 def connect_broker():
@@ -72,33 +78,39 @@ def connect_broker():
     }
     """
     try:
-        data     = parse_body(request)
-        host     = validate_mqtt_host(data.get("host", ""))
-        port     = validate_mqtt_port(data.get("port", 1883))
+        data = parse_body(request)
+        host = validate_mqtt_host(data.get("host", ""))
+        port = validate_mqtt_port(data.get("port", 1883))
         username = data.get("username", "") or None
         password = data.get("password", "") or None
         client_id = data.get("client_id") or None
         keepalive = parse_int(data.get("keepalive", 60), "keepalive")
 
         _mqtt_manager.connect(
-            host=host, port=port, username=username,
-            password=password, client_id=client_id, keepalive=keepalive,
+            host=host,
+            port=port,
+            username=username,
+            password=password,
+            client_id=client_id,
+            keepalive=keepalive,
         )
         return jsonify({"message": f"Connecting to {host}:{port}"}), 200
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
-        return jsonify({"error": str(e)}), 409   # already connected
+        return jsonify({"error": str(e)}), 409  # already connected
 
 
 @mqtt_api.route("/api/mqtt/disconnect", methods=["POST"])
 @require_role("operator")
 def disconnect_broker():
     # Stop any running bridges first so they don't keep trying to publish
-    for bridge in (_mqtt_manager.can_bridge,
-                   _mqtt_manager.modbus_bridge,
-                   _mqtt_manager.io_bridge):
+    for bridge in (
+        _mqtt_manager.can_bridge,
+        _mqtt_manager.modbus_bridge,
+        _mqtt_manager.io_bridge,
+    ):
         if bridge and bridge.running:
             try:
                 bridge.stop()
@@ -117,6 +129,7 @@ def get_status():
 # ════════════════════════════════════════════════════════════════════
 # CAN bridge
 # ════════════════════════════════════════════════════════════════════
+
 
 @mqtt_api.route("/api/mqtt/bridges/can", methods=["GET"])
 @require_role("viewer")
@@ -137,17 +150,25 @@ def start_can_bridge():
     }
     """
     try:
-        data   = parse_body(request)
+        data = parse_body(request)
         kwargs = {}
-        if "publish_topic"   in data: kwargs["publish_topic"]   = validate_mqtt_topic(data["publish_topic"])
-        if "subscribe_topic" in data: kwargs["subscribe_topic"] = validate_mqtt_topic(data["subscribe_topic"])
-        if "qos"             in data: kwargs["qos"]             = validate_mqtt_qos(data["qos"])
+        if "publish_topic" in data:
+            kwargs["publish_topic"] = validate_mqtt_topic(data["publish_topic"])
+        if "subscribe_topic" in data:
+            kwargs["subscribe_topic"] = validate_mqtt_topic(data["subscribe_topic"])
+        if "qos" in data:
+            kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.can_bridge.start(**kwargs)
-        return jsonify({
-            "message": "CAN bridge started",
-            "status": _mqtt_manager.can_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "CAN bridge started",
+                    "status": _mqtt_manager.can_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -167,17 +188,25 @@ def stop_can_bridge():
 def config_can_bridge():
     """Update CAN bridge topic config. Bridge must be stopped first."""
     try:
-        data   = parse_body(request)
+        data = parse_body(request)
         kwargs = {}
-        if "publish_topic"   in data: kwargs["publish_topic"]   = validate_mqtt_topic(data["publish_topic"])
-        if "subscribe_topic" in data: kwargs["subscribe_topic"] = validate_mqtt_topic(data["subscribe_topic"])
-        if "qos"             in data: kwargs["qos"]             = validate_mqtt_qos(data["qos"])
+        if "publish_topic" in data:
+            kwargs["publish_topic"] = validate_mqtt_topic(data["publish_topic"])
+        if "subscribe_topic" in data:
+            kwargs["subscribe_topic"] = validate_mqtt_topic(data["subscribe_topic"])
+        if "qos" in data:
+            kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.can_bridge.update_config(**kwargs)
-        return jsonify({
-            "message": "CAN bridge config updated",
-            "status": _mqtt_manager.can_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "CAN bridge config updated",
+                    "status": _mqtt_manager.can_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -188,6 +217,7 @@ def config_can_bridge():
 # ════════════════════════════════════════════════════════════════════
 # Modbus bridge
 # ════════════════════════════════════════════════════════════════════
+
 
 @mqtt_api.route("/api/mqtt/bridges/modbus", methods=["GET"])
 @require_role("viewer")
@@ -211,10 +241,15 @@ def start_modbus_bridge():
     function_code defaults to 3 (read holding register) if omitted.
     """
     try:
-        data          = parse_body(request)
+        data = parse_body(request)
         register_list = data.get("registers")
         if not register_list:
-            return jsonify({"error": "'registers' list is required to start Modbus bridge"}), 400
+            return (
+                jsonify(
+                    {"error": "'registers' list is required to start Modbus bridge"}
+                ),
+                400,
+            )
         if not isinstance(register_list, list):
             return jsonify({"error": "'registers' must be a list"}), 400
 
@@ -229,31 +264,47 @@ def start_modbus_bridge():
                 return jsonify({"error": f"registers[{i}] missing 'address'"}), 400
 
             address = validate_modbus_address(reg["address"])
-            fc      = parse_int(reg.get("function_code", 3), "function_code")
+            fc = parse_int(reg.get("function_code", 3), "function_code")
             if fc not in (1, 2, 3, 4):
-                return jsonify({"error": f"registers[{i}] function_code must be 1–4"}), 400
+                return (
+                    jsonify({"error": f"registers[{i}] function_code must be 1–4"}),
+                    400,
+                )
 
-            validated.append({
-                "device_id":     str(reg["device_id"]),
-                "address":       address,
-                "function_code": fc,
-            })
+            validated.append(
+                {
+                    "device_id": str(reg["device_id"]),
+                    "address": address,
+                    "function_code": fc,
+                }
+            )
 
         kwargs = {"register_list": validated}
         if "poll_interval_s" in data:
-            kwargs["poll_interval_s"] = validate_poll_interval_s(data["poll_interval_s"])
+            kwargs["poll_interval_s"] = validate_poll_interval_s(
+                data["poll_interval_s"]
+            )
         if "publish_topic_template" in data:
-            kwargs["publish_topic_template"] = validate_mqtt_topic(data["publish_topic_template"])
+            kwargs["publish_topic_template"] = validate_mqtt_topic(
+                data["publish_topic_template"]
+            )
         if "subscribe_topic_template" in data:
-            kwargs["subscribe_topic_template"] = validate_mqtt_topic(data["subscribe_topic_template"])
+            kwargs["subscribe_topic_template"] = validate_mqtt_topic(
+                data["subscribe_topic_template"]
+            )
         if "qos" in data:
             kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.modbus_bridge.start(**kwargs)
-        return jsonify({
-            "message": "Modbus bridge started",
-            "status": _mqtt_manager.modbus_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "Modbus bridge started",
+                    "status": _mqtt_manager.modbus_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -277,7 +328,7 @@ def update_modbus_registers():
     Body: {"registers": [...]}  — same format as start.
     """
     try:
-        data          = parse_body(request)
+        data = parse_body(request)
         register_list = data.get("registers", [])
         if not isinstance(register_list, list):
             return jsonify({"error": "'registers' must be a list"}), 400
@@ -287,18 +338,25 @@ def update_modbus_registers():
             if not isinstance(reg, dict):
                 return jsonify({"error": f"registers[{i}] must be an object"}), 400
             address = validate_modbus_address(reg.get("address", 0))
-            fc      = parse_int(reg.get("function_code", 3), "function_code")
-            validated.append({
-                "device_id":     str(reg.get("device_id", "")),
-                "address":       address,
-                "function_code": fc,
-            })
+            fc = parse_int(reg.get("function_code", 3), "function_code")
+            validated.append(
+                {
+                    "device_id": str(reg.get("device_id", "")),
+                    "address": address,
+                    "function_code": fc,
+                }
+            )
 
         _mqtt_manager.modbus_bridge.update_register_list(validated)
-        return jsonify({
-            "message": f"Register list updated ({len(validated)} entries)",
-            "registers": validated,
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": f"Register list updated ({len(validated)} entries)",
+                    "registers": validated,
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -309,18 +367,33 @@ def update_modbus_registers():
 def config_modbus_bridge():
     """Update Modbus bridge config. Bridge must be stopped first."""
     try:
-        data   = parse_body(request)
+        data = parse_body(request)
         kwargs = {}
-        if "poll_interval_s"          in data: kwargs["poll_interval_s"]          = validate_poll_interval_s(data["poll_interval_s"])
-        if "publish_topic_template"   in data: kwargs["publish_topic_template"]   = validate_mqtt_topic(data["publish_topic_template"])
-        if "subscribe_topic_template" in data: kwargs["subscribe_topic_template"] = validate_mqtt_topic(data["subscribe_topic_template"])
-        if "qos"                      in data: kwargs["qos"]                      = validate_mqtt_qos(data["qos"])
+        if "poll_interval_s" in data:
+            kwargs["poll_interval_s"] = validate_poll_interval_s(
+                data["poll_interval_s"]
+            )
+        if "publish_topic_template" in data:
+            kwargs["publish_topic_template"] = validate_mqtt_topic(
+                data["publish_topic_template"]
+            )
+        if "subscribe_topic_template" in data:
+            kwargs["subscribe_topic_template"] = validate_mqtt_topic(
+                data["subscribe_topic_template"]
+            )
+        if "qos" in data:
+            kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.modbus_bridge.update_config(**kwargs)
-        return jsonify({
-            "message": "Modbus bridge config updated",
-            "status": _mqtt_manager.modbus_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "Modbus bridge config updated",
+                    "status": _mqtt_manager.modbus_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -331,6 +404,7 @@ def config_modbus_bridge():
 # ════════════════════════════════════════════════════════════════════
 # IO bridge
 # ════════════════════════════════════════════════════════════════════
+
 
 @mqtt_api.route("/api/mqtt/bridges/io", methods=["GET"])
 @require_role("viewer")
@@ -350,17 +424,29 @@ def start_io_bridge():
     }
     """
     try:
-        data   = parse_body(request)
+        data = parse_body(request)
         kwargs = {}
-        if "poll_interval_ms"  in data: kwargs["poll_interval_ms"]  = validate_poll_interval_ms(data["poll_interval_ms"])
-        if "publish_on_change" in data: kwargs["publish_on_change"] = parse_bool(data["publish_on_change"], "publish_on_change")
-        if "qos"               in data: kwargs["qos"]               = validate_mqtt_qos(data["qos"])
+        if "poll_interval_ms" in data:
+            kwargs["poll_interval_ms"] = validate_poll_interval_ms(
+                data["poll_interval_ms"]
+            )
+        if "publish_on_change" in data:
+            kwargs["publish_on_change"] = parse_bool(
+                data["publish_on_change"], "publish_on_change"
+            )
+        if "qos" in data:
+            kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.io_bridge.start(**kwargs)
-        return jsonify({
-            "message": "IO bridge started",
-            "status": _mqtt_manager.io_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "IO bridge started",
+                    "status": _mqtt_manager.io_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -380,17 +466,29 @@ def stop_io_bridge():
 def config_io_bridge():
     """Update IO bridge config. Bridge must be stopped first."""
     try:
-        data   = parse_body(request)
+        data = parse_body(request)
         kwargs = {}
-        if "poll_interval_ms"   in data: kwargs["poll_interval_ms"]  = validate_poll_interval_ms(data["poll_interval_ms"])
-        if "publish_on_change"  in data: kwargs["publish_on_change"] = parse_bool(data["publish_on_change"], "publish_on_change")
-        if "qos"                in data: kwargs["qos"]               = validate_mqtt_qos(data["qos"])
+        if "poll_interval_ms" in data:
+            kwargs["poll_interval_ms"] = validate_poll_interval_ms(
+                data["poll_interval_ms"]
+            )
+        if "publish_on_change" in data:
+            kwargs["publish_on_change"] = parse_bool(
+                data["publish_on_change"], "publish_on_change"
+            )
+        if "qos" in data:
+            kwargs["qos"] = validate_mqtt_qos(data["qos"])
 
         _mqtt_manager.io_bridge.update_config(**kwargs)
-        return jsonify({
-            "message": "IO bridge config updated",
-            "status": _mqtt_manager.io_bridge.get_status(),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "message": "IO bridge config updated",
+                    "status": _mqtt_manager.io_bridge.get_status(),
+                }
+            ),
+            200,
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400

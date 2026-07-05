@@ -14,8 +14,11 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.resilience import (
-    CircuitBreaker, CircuitState, CircuitOpenError,
-    retry_with_backoff, HealthStatus,
+    CircuitBreaker,
+    CircuitState,
+    CircuitOpenError,
+    retry_with_backoff,
+    HealthStatus,
 )
 
 
@@ -32,7 +35,9 @@ def test_circuit_breaker_opens_after_threshold():
         except ValueError:
             pass
 
-    assert breaker.state == CircuitState.OPEN, "breaker opens after reaching failure_threshold"
+    assert (
+        breaker.state == CircuitState.OPEN
+    ), "breaker opens after reaching failure_threshold"
 
     with pytest.raises(CircuitOpenError):
         always_fails()
@@ -58,7 +63,9 @@ def test_circuit_breaker_half_open_recovery():
 
     result = flaky(False)  # this call should be allowed through as a probe
     assert result == "ok", "HALF_OPEN probe succeeds and closes the breaker"
-    assert breaker.state == CircuitState.CLOSED, "breaker is CLOSED after a successful probe"
+    assert (
+        breaker.state == CircuitState.CLOSED
+    ), "breaker is CLOSED after a successful probe"
 
 
 def test_circuit_breaker_independent_instances():
@@ -112,10 +119,16 @@ def test_health_status_aggregation():
     hs = HealthStatus()
     hs.update("gpio", "healthy")
     hs.update("can", "healthy")
-    assert hs.get_overall_status() == "healthy", "overall status is healthy when all components are healthy"
+    assert (
+        hs.get_overall_status() == "healthy"
+    ), "overall status is healthy when all components are healthy"
 
     hs.update("modbus", "degraded")
-    assert hs.get_overall_status() == "degraded", "overall status is degraded when one component is degraded"
+    assert (
+        hs.get_overall_status() == "degraded"
+    ), "overall status is degraded when one component is degraded"
 
     hs.update("can", "unhealthy")
-    assert hs.get_overall_status() == "unhealthy", "overall status is unhealthy when any component is unhealthy"
+    assert (
+        hs.get_overall_status() == "unhealthy"
+    ), "overall status is unhealthy when any component is unhealthy"

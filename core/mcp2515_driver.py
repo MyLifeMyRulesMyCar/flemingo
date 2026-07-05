@@ -12,32 +12,32 @@ import spidev
 import time
 
 # -- SPI Commands --------------------------------------------------------------
-MCP2515_RESET       = 0xC0
-MCP2515_READ        = 0x03
-MCP2515_WRITE       = 0x02
-MCP2515_RTS         = 0x80
-MCP2515_BIT_MODIFY  = 0x05
+MCP2515_RESET = 0xC0
+MCP2515_READ = 0x03
+MCP2515_WRITE = 0x02
+MCP2515_RTS = 0x80
+MCP2515_BIT_MODIFY = 0x05
 MCP2515_READ_STATUS = 0xA0
-MCP2515_RX_STATUS   = 0xB0
+MCP2515_RX_STATUS = 0xB0
 
 # -- Registers ------------------------------------------------------------------
-CANCTRL  = 0x0F
-CANSTAT  = 0x0E
-TEC      = 0x1C          # Transmit Error Counter
-REC      = 0x1D          # Receive Error Counter
-CNF1     = 0x2A
-CNF2     = 0x29
-CNF3     = 0x28
-CANINTE  = 0x2B
-CANINTF  = 0x2C
-EFLG     = 0x2D
+CANCTRL = 0x0F
+CANSTAT = 0x0E
+TEC = 0x1C  # Transmit Error Counter
+REC = 0x1D  # Receive Error Counter
+CNF1 = 0x2A
+CNF2 = 0x29
+CNF3 = 0x28
+CANINTE = 0x2B
+CANINTF = 0x2C
+EFLG = 0x2D
 
 TXB0CTRL = 0x30
 TXB0SIDH = 0x31
 TXB0SIDL = 0x32
 TXB0EID8 = 0x33
 TXB0EID0 = 0x34
-TXB0DLC  = 0x35
+TXB0DLC = 0x35
 TXB0DATA = 0x36
 
 # TX buffer 2 (used exclusively for health-check transmits so it never
@@ -47,7 +47,7 @@ TXB2SIDH = 0x51
 TXB2SIDL = 0x52
 TXB2EID8 = 0x53
 TXB2EID0 = 0x54
-TXB2DLC  = 0x55
+TXB2DLC = 0x55
 TXB2DATA = 0x56
 
 RXB0CTRL = 0x60
@@ -55,7 +55,7 @@ RXB0SIDH = 0x61
 RXB0SIDL = 0x62
 RXB0EID8 = 0x63
 RXB0EID0 = 0x64
-RXB0DLC  = 0x65
+RXB0DLC = 0x65
 RXB0DATA = 0x66
 
 RXB1CTRL = 0x70
@@ -63,64 +63,64 @@ RXB1SIDH = 0x71
 RXB1SIDL = 0x72
 RXB1EID8 = 0x73
 RXB1EID0 = 0x74
-RXB1DLC  = 0x75
+RXB1DLC = 0x75
 RXB1DATA = 0x76
 
 # -- Operating Modes -------------------------------------------------------------
-MODE_NORMAL     = 0x00
-MODE_SLEEP      = 0x20
-MODE_LOOPBACK   = 0x40
+MODE_NORMAL = 0x00
+MODE_SLEEP = 0x20
+MODE_LOOPBACK = 0x40
 MODE_LISTENONLY = 0x60
-MODE_CONFIG     = 0x80
+MODE_CONFIG = 0x80
 
 # -- Bitrate Tables (exact values from Arduino mcp2515.h) ------------------------
 CAN_SPEED_8MHZ = {
     1000000: [0x00, 0x80, 0x80],
-    500000:  [0x00, 0x90, 0x82],
-    250000:  [0x00, 0xB1, 0x85],
-    200000:  [0x00, 0xB4, 0x86],
-    125000:  [0x01, 0xB1, 0x85],
-    100000:  [0x01, 0xB4, 0x86],
-    80000:   [0x01, 0xBF, 0x87],
-    50000:   [0x03, 0xB4, 0x86],
-    40000:   [0x03, 0xBF, 0x87],
-    33333:   [0x47, 0xE2, 0x85],
-    31250:   [0x07, 0xA4, 0x84],
-    20000:   [0x07, 0xBF, 0x87],
-    10000:   [0x0F, 0xBF, 0x87],
-    5000:    [0x1F, 0xBF, 0x87],
+    500000: [0x00, 0x90, 0x82],
+    250000: [0x00, 0xB1, 0x85],
+    200000: [0x00, 0xB4, 0x86],
+    125000: [0x01, 0xB1, 0x85],
+    100000: [0x01, 0xB4, 0x86],
+    80000: [0x01, 0xBF, 0x87],
+    50000: [0x03, 0xB4, 0x86],
+    40000: [0x03, 0xBF, 0x87],
+    33333: [0x47, 0xE2, 0x85],
+    31250: [0x07, 0xA4, 0x84],
+    20000: [0x07, 0xBF, 0x87],
+    10000: [0x0F, 0xBF, 0x87],
+    5000: [0x1F, 0xBF, 0x87],
 }
 
 CAN_SPEED_16MHZ = {
     1000000: [0x00, 0xD0, 0x82],
-    500000:  [0x00, 0xF0, 0x86],
-    250000:  [0x41, 0xF1, 0x85],
-    200000:  [0x01, 0xFA, 0x87],
-    125000:  [0x03, 0xF0, 0x86],
-    100000:  [0x03, 0xFA, 0x87],
-    95000:   [0x03, 0xAD, 0x07],
-    83333:   [0x03, 0xBE, 0x07],
-    80000:   [0x03, 0xFF, 0x87],
-    50000:   [0x07, 0xFA, 0x87],
-    40000:   [0x07, 0xFF, 0x87],
-    33333:   [0x4E, 0xF1, 0x85],
-    20000:   [0x0F, 0xFF, 0x87],
-    10000:   [0x1F, 0xFF, 0x87],
-    5000:    [0x3F, 0xFF, 0x87],
+    500000: [0x00, 0xF0, 0x86],
+    250000: [0x41, 0xF1, 0x85],
+    200000: [0x01, 0xFA, 0x87],
+    125000: [0x03, 0xF0, 0x86],
+    100000: [0x03, 0xFA, 0x87],
+    95000: [0x03, 0xAD, 0x07],
+    83333: [0x03, 0xBE, 0x07],
+    80000: [0x03, 0xFF, 0x87],
+    50000: [0x07, 0xFA, 0x87],
+    40000: [0x07, 0xFF, 0x87],
+    33333: [0x4E, 0xF1, 0x85],
+    20000: [0x0F, 0xFF, 0x87],
+    10000: [0x1F, 0xFF, 0x87],
+    5000: [0x3F, 0xFF, 0x87],
 }
 
 CAN_SPEED_20MHZ = {
     1000000: [0x00, 0xD9, 0x82],
-    500000:  [0x00, 0xFA, 0x87],
-    250000:  [0x41, 0xFB, 0x86],
-    200000:  [0x01, 0xFF, 0x87],
-    125000:  [0x03, 0xFA, 0x87],
-    100000:  [0x04, 0xFA, 0x87],
-    83333:   [0x04, 0xFE, 0x87],
-    80000:   [0x04, 0xFF, 0x87],
-    50000:   [0x09, 0xFA, 0x87],
-    40000:   [0x09, 0xFF, 0x87],
-    33333:   [0x0B, 0xFF, 0x87],
+    500000: [0x00, 0xFA, 0x87],
+    250000: [0x41, 0xFB, 0x86],
+    200000: [0x01, 0xFF, 0x87],
+    125000: [0x03, 0xFA, 0x87],
+    100000: [0x04, 0xFA, 0x87],
+    83333: [0x04, 0xFE, 0x87],
+    80000: [0x04, 0xFF, 0x87],
+    50000: [0x09, 0xFA, 0x87],
+    40000: [0x09, 0xFF, 0x87],
+    33333: [0x0B, 0xFF, 0x87],
 }
 
 
@@ -128,16 +128,16 @@ class CANMessage:
     """CAN Message container."""
 
     def __init__(self, can_id=0, data=None, dlc=0, extended=False, rtr=False):
-        self.can_id   = can_id
-        self.data     = data if data else []
-        self.dlc      = dlc if dlc else len(self.data)
+        self.can_id = can_id
+        self.data = data if data else []
+        self.dlc = dlc if dlc else len(self.data)
         self.extended = extended
-        self.rtr      = rtr
+        self.rtr = rtr
 
     def __repr__(self):
         if self.rtr:
             return f"ID: 0x{self.can_id:03X}  RTR  DLC: {self.dlc}"
-        data_str = ' '.join(f'0x{b:02X}' for b in self.data[:self.dlc])
+        data_str = " ".join(f"0x{b:02X}" for b in self.data[: self.dlc])
         ext = " [EXT]" if self.extended else ""
         return f"ID: 0x{self.can_id:03X}{ext}  DLC: {self.dlc}  Data: [{data_str}]"
 
@@ -148,15 +148,17 @@ class MCP2515:
     Default: bus=0, device=None -> auto-probe /dev/spidev0.1 then /dev/spidev0.0
     """
 
-    def __init__(self, spi_bus=0, spi_device=None, spi_speed=1_000_000, crystal=8_000_000):
+    def __init__(
+        self, spi_bus=0, spi_device=None, spi_speed=1_000_000, crystal=8_000_000
+    ):
         if crystal == 16_000_000:
-            self.speed_table  = CAN_SPEED_16MHZ
+            self.speed_table = CAN_SPEED_16MHZ
             self.crystal_name = "16 MHz"
         elif crystal == 20_000_000:
-            self.speed_table  = CAN_SPEED_20MHZ
+            self.speed_table = CAN_SPEED_20MHZ
             self.crystal_name = "20 MHz"
         else:
-            self.speed_table  = CAN_SPEED_8MHZ
+            self.speed_table = CAN_SPEED_8MHZ
             self.crystal_name = "8 MHz"
             if crystal != 8_000_000:
                 print(f"⚠️  Unknown crystal {crystal/1e6} MHz -> using 8 MHz table")
@@ -170,8 +172,10 @@ class MCP2515:
         self.spi.mode = 0b00
         self.spi.lsbfirst = False
 
-        print(f"🔧 MCP2515  /dev/spidev{spi_bus}.{spi_device}"
-              f"  @{spi_speed//1000} kHz  crystal={self.crystal_name}")
+        print(
+            f"🔧 MCP2515  /dev/spidev{spi_bus}.{spi_device}"
+            f"  @{spi_speed//1000} kHz  crystal={self.crystal_name}"
+        )
 
     @staticmethod
     def _probe_spi_device(spi_bus, spi_device, spi_speed):
@@ -186,7 +190,9 @@ class MCP2515:
             status = probe.xfer2([MCP2515_READ, CANSTAT, 0x00])[2]
             ctrl = probe.xfer2([MCP2515_READ, CANCTRL, 0x00])[2]
             got = status & 0xE0
-            print(f"  🔍 probe /dev/spidev{spi_bus}.{spi_device}: CANSTAT=0x{status:02X} (mode=0x{got:02X}), CANCTRL=0x{ctrl:02X}")
+            print(
+                f"  🔍 probe /dev/spidev{spi_bus}.{spi_device}: CANSTAT=0x{status:02X} (mode=0x{got:02X}), CANCTRL=0x{ctrl:02X}"
+            )
             return got == MODE_CONFIG
         except Exception as exc:
             print(f"  ⚠️  probe /dev/spidev{spi_bus}.{spi_device} failed: {exc}")
@@ -203,7 +209,9 @@ class MCP2515:
             if MCP2515._probe_spi_device(spi_bus, spi_device, spi_speed):
                 print(f"  ✅ Found MCP2515 on /dev/spidev{spi_bus}.{spi_device}")
                 return spi_device
-        raise RuntimeError(f"No MCP2515 found on /dev/spidev{spi_bus}.0 or /dev/spidev{spi_bus}.1")
+        raise RuntimeError(
+            f"No MCP2515 found on /dev/spidev{spi_bus}.0 or /dev/spidev{spi_bus}.1"
+        )
 
     def reset(self):
         self.spi.xfer2([MCP2515_RESET])
@@ -226,11 +234,11 @@ class MCP2515:
 
     def set_mode(self, mode):
         _NAMES = {
-            MODE_NORMAL:     "NORMAL",
-            MODE_SLEEP:      "SLEEP",
-            MODE_LOOPBACK:   "LOOPBACK",
+            MODE_NORMAL: "NORMAL",
+            MODE_SLEEP: "SLEEP",
+            MODE_LOOPBACK: "LOOPBACK",
             MODE_LISTENONLY: "LISTEN-ONLY",
-            MODE_CONFIG:     "CONFIG",
+            MODE_CONFIG: "CONFIG",
         }
         self.modify_register(CANCTRL, 0xE0, mode)
         time.sleep(0.01)
@@ -259,11 +267,15 @@ class MCP2515:
 
         c1, c2, c3 = (self.read_register(r) for r in (CNF1, CNF2, CNF3))
         if c1 == cfg[0] and c2 == cfg[1] and c3 == cfg[2]:
-            print(f"   ✅ Bitrate {bitrate} bps  CNF=[0x{c1:02X}, 0x{c2:02X}, 0x{c3:02X}]")
+            print(
+                f"   ✅ Bitrate {bitrate} bps  CNF=[0x{c1:02X}, 0x{c2:02X}, 0x{c3:02X}]"
+            )
             return True
 
-        print(f"   ⚠️  CNF verify fail  expected=[0x{cfg[0]:02X},0x{cfg[1]:02X},0x{cfg[2]:02X}]"
-              f"  got=[0x{c1:02X},0x{c2:02X},0x{c3:02X}]")
+        print(
+            f"   ⚠️  CNF verify fail  expected=[0x{cfg[0]:02X},0x{cfg[1]:02X},0x{cfg[2]:02X}]"
+            f"  got=[0x{c1:02X},0x{c2:02X},0x{c3:02X}]"
+        )
         return False
 
     def init(self, bitrate=125_000, mode=MODE_NORMAL, loopback=False):
@@ -300,8 +312,8 @@ class MCP2515:
     def send_message(self, msg, txbuf=0):
         _TX = [
             (TXB0CTRL, TXB0SIDH, TXB0DLC, TXB0DATA),
-            (0x40,     0x41,     0x45,    0x46),
-            (0x50,     0x51,     0x55,    0x56),
+            (0x40, 0x41, 0x45, 0x46),
+            (0x50, 0x51, 0x55, 0x56),
         ]
         txbuf = max(0, min(txbuf, 2))
         ctrl, sidh, dlc_reg, data_reg = _TX[txbuf]
@@ -310,14 +322,16 @@ class MCP2515:
             return False
 
         if msg.extended:
-            self.write_register(sidh,     (msg.can_id >> 21) & 0xFF)
-            self.write_register(sidh + 1, ((msg.can_id >> 13) & 0xE0) | 0x08 |
-                                           ((msg.can_id >> 16) & 0x03))
-            self.write_register(sidh + 2, (msg.can_id >> 8)  & 0xFF)
-            self.write_register(sidh + 3,  msg.can_id        & 0xFF)
+            self.write_register(sidh, (msg.can_id >> 21) & 0xFF)
+            self.write_register(
+                sidh + 1,
+                ((msg.can_id >> 13) & 0xE0) | 0x08 | ((msg.can_id >> 16) & 0x03),
+            )
+            self.write_register(sidh + 2, (msg.can_id >> 8) & 0xFF)
+            self.write_register(sidh + 3, msg.can_id & 0xFF)
         else:
-            self.write_register(sidh,     (msg.can_id >> 3)  & 0xFF)
-            self.write_register(sidh + 1, (msg.can_id << 5)  & 0xE0)
+            self.write_register(sidh, (msg.can_id >> 3) & 0xFF)
+            self.write_register(sidh + 1, (msg.can_id << 5) & 0xE0)
 
         dlc_val = (msg.dlc & 0x0F) | (0x40 if msg.rtr else 0x00)
         self.write_register(dlc_reg, dlc_val)
@@ -348,22 +362,24 @@ class MCP2515:
         else:
             sidh_r, dlc_r, data_r, flag_bit = RXB1SIDH, RXB1DLC, RXB1DATA, 0x02
 
-        sidh     = self.read_register(sidh_r)
-        sidl     = self.read_register(sidh_r + 1)
-        eid8     = self.read_register(sidh_r + 2)
-        eid0     = self.read_register(sidh_r + 3)
+        sidh = self.read_register(sidh_r)
+        sidl = self.read_register(sidh_r + 1)
+        eid8 = self.read_register(sidh_r + 2)
+        eid0 = self.read_register(sidh_r + 3)
         dlc_byte = self.read_register(dlc_r)
 
         extended = bool(sidl & 0x08)
-        rtr      = bool(dlc_byte & 0x40)
-        dlc      = dlc_byte & 0x0F
+        rtr = bool(dlc_byte & 0x40)
+        dlc = dlc_byte & 0x0F
 
         if extended:
-            can_id = (((sidh & 0xFF) << 21) |
-                      ((sidl & 0xE0) << 13) |
-                      ((sidl & 0x03) << 16) |
-                       (eid8  << 8)         |
-                        eid0)
+            can_id = (
+                ((sidh & 0xFF) << 21)
+                | ((sidl & 0xE0) << 13)
+                | ((sidl & 0x03) << 16)
+                | (eid8 << 8)
+                | eid0
+            )
         else:
             can_id = (sidh << 3) | (sidl >> 5)
 
@@ -392,11 +408,11 @@ class MCP2515:
         autonomously — poll this until it stops returning 'pending'."""
         addrs = [TXB0CTRL, 0x40, TXB2CTRL]
         status = self.read_register(addrs[max(0, min(txbuf, 2))])
-        if status & 0x08:    # TXREQ — still transmitting
-            return 'pending'
-        if status & 0x10:    # TXERR — transmission failed (no ACK)
-            return 'error'
-        return 'success'
+        if status & 0x08:  # TXREQ — still transmitting
+            return "pending"
+        if status & 0x10:  # TXERR — transmission failed (no ACK)
+            return "error"
+        return "success"
 
     def abort_tx(self, txbuf=0):
         """Abort a pending transmission by clearing the TXREQ bit.

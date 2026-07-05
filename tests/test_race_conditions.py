@@ -18,8 +18,6 @@ import os
 import threading
 import time
 
-import pytest
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.state import ThreadSafeState
@@ -39,7 +37,10 @@ def test_state_concurrent_reads_writes():
     stop = threading.Event()
 
     candidate_values = [
-        [0, 0, 0, 0], [1, 1, 1, 1], [1, 0, 1, 0], [0, 1, 0, 1],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        [1, 0, 1, 0],
+        [0, 1, 0, 1],
     ]
 
     def writer(values):
@@ -62,10 +63,9 @@ def test_state_concurrent_reads_writes():
             except Exception as e:
                 errors.append(f"reader error: {e}")
 
-    threads = (
-        [threading.Thread(target=writer, args=(v,)) for v in candidate_values]
-        + [threading.Thread(target=reader) for _ in range(8)]
-    )
+    threads = [threading.Thread(target=writer, args=(v,)) for v in candidate_values] + [
+        threading.Thread(target=reader) for _ in range(8)
+    ]
 
     for t in threads:
         t.start()
@@ -108,10 +108,9 @@ def test_state_individual_channel_writes():
             except Exception as e:
                 errors.append(f"reader error: {e}")
 
-    threads = (
-        [threading.Thread(target=toggler, args=(ch,)) for ch in range(4)]
-        + [threading.Thread(target=reader) for _ in range(8)]
-    )
+    threads = [threading.Thread(target=toggler, args=(ch,)) for ch in range(4)] + [
+        threading.Thread(target=reader) for _ in range(8)
+    ]
 
     for t in threads:
         t.start()
@@ -166,15 +165,13 @@ def test_circuit_breaker_concurrent_failures():
     # rejected as CircuitOpenError WITHOUT incrementing call_count -
     # that's the entire point of the breaker (stop touching the
     # failing resource once it's known to be down).
-    assert call_count["value"] <= breaker.failure_threshold + len(threads), (
-        "breaker stopped calling the failing function once open"
-    )
-    assert open_errors["value"] > 0, (
-        "breaker rejected the remaining attempts via CircuitOpenError"
-    )
-    assert breaker.get_state()["state"] == "open", (
-        "breaker ended in OPEN state"
-    )
-    assert call_count["value"] + open_errors["value"] <= 200, (
-        "no attempts were lost or double-counted past a sane bound"
-    )
+    assert call_count["value"] <= breaker.failure_threshold + len(
+        threads
+    ), "breaker stopped calling the failing function once open"
+    assert (
+        open_errors["value"] > 0
+    ), "breaker rejected the remaining attempts via CircuitOpenError"
+    assert breaker.get_state()["state"] == "open", "breaker ended in OPEN state"
+    assert (
+        call_count["value"] + open_errors["value"] <= 200
+    ), "no attempts were lost or double-counted past a sane bound"

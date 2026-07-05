@@ -34,8 +34,10 @@ def main():
 
     mgr = ModbusManager()
     dev_id = mgr.add_device(
-        "Bidirectional Test Device", port=args.port,
-        slave_id=args.slave, baudrate=args.baudrate,
+        "Bidirectional Test Device",
+        port=args.port,
+        slave_id=args.slave,
+        baudrate=args.baudrate,
     )
 
     try:

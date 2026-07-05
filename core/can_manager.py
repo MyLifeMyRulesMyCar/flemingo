@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BITRATE = 125_000
 DEFAULT_CRYSTAL = 8_000_000
-MAX_CONSECUTIVE_RX_ERRORS = 3    # SPI errors before declaring disconnect
+MAX_CONSECUTIVE_RX_ERRORS = 3  # SPI errors before declaring disconnect
 
 # TX-based health check (detects CAN bus physical disconnection)
-HEALTH_CHECK_INTERVAL = 5.0       # seconds between TX probes
-HEALTH_CHECK_CAN_ID   = 0x7FF     # CAN ID for probe frame (reserved, no user traffic)
-MAX_HEALTH_FAILURES   = 3         # consecutive TX errors → disconnect
-HEALTH_TXBUF          = 2         # TX buffer used for probes (0 is user-facing send)
+HEALTH_CHECK_INTERVAL = 5.0  # seconds between TX probes
+HEALTH_CHECK_CAN_ID = 0x7FF  # CAN ID for probe frame (reserved, no user traffic)
+MAX_HEALTH_FAILURES = 3  # consecutive TX errors → disconnect
+HEALTH_TXBUF = 2  # TX buffer used for probes (0 is user-facing send)
 
 
 class CANManager:
@@ -54,9 +54,15 @@ class CANManager:
         mgr.disconnect()
     """
 
-    def __init__(self, spi_bus=0, spi_device=None, bitrate=DEFAULT_BITRATE, crystal=DEFAULT_CRYSTAL):
+    def __init__(
+        self,
+        spi_bus=0,
+        spi_device=None,
+        bitrate=DEFAULT_BITRATE,
+        crystal=DEFAULT_CRYSTAL,
+    ):
         self.spi_bus = spi_bus
-        self.spi_device = spi_device   # None = auto-probe spidev0.1 then spidev0.0
+        self.spi_device = spi_device  # None = auto-probe spidev0.1 then spidev0.0
         self.bitrate = bitrate
         self.crystal = crystal
 
@@ -121,8 +127,10 @@ class CANManager:
         """Raw hardware bring-up only - no thread management. Called through
         the circuit breaker by connect() (via _do_connect)."""
         with self._lock:
-            logger.info(f"Connecting MCP2515 (bus={self.spi_bus}, device={self.spi_device}, "
-                        f"{self.bitrate} bps, crystal={self.crystal})...")
+            logger.info(
+                f"Connecting MCP2515 (bus={self.spi_bus}, device={self.spi_device}, "
+                f"{self.bitrate} bps, crystal={self.crystal})..."
+            )
 
             controller = MCP2515(
                 spi_bus=self.spi_bus,
@@ -132,7 +140,9 @@ class CANManager:
 
             if not controller.init(bitrate=self.bitrate):
                 controller.close()
-                raise RuntimeError("MCP2515 init failed - check wiring, 5V supply, and crystal value")
+                raise RuntimeError(
+                    "MCP2515 init failed - check wiring, 5V supply, and crystal value"
+                )
 
             self.controller = controller
             self.connected = True
@@ -171,15 +181,17 @@ class CANManager:
             # up the new connection automatically.
             return
         self.running = True
-        self.rx_thread = threading.Thread(target=self._rx_loop, name="CAN-RX", daemon=True)
+        self.rx_thread = threading.Thread(
+            target=self._rx_loop, name="CAN-RX", daemon=True
+        )
         self.rx_thread.start()
 
     def _rx_loop(self):
         logger.info("CAN RX loop started")
         consecutive_errors = 0
         health_failures = 0
-        last_health_check = time.time()    # grace period after connect
-        last_rx_time = time.time()         # bus was just connected
+        last_health_check = time.time()  # grace period after connect
+        last_rx_time = time.time()  # bus was just connected
 
         while self.running:
             try:
@@ -231,8 +243,9 @@ class CANManager:
                         self.controller = None
                     self.connected = False
                     health_status.update(
-                        "can", "unhealthy",
-                        f"Disconnected ({health_failures} health-check failures)"
+                        "can",
+                        "unhealthy",
+                        f"Disconnected ({health_failures} health-check failures)",
                     )
                     health_failures = 0
                     continue
@@ -249,7 +262,9 @@ class CANManager:
                 time.sleep(0.1)
 
                 if consecutive_errors >= MAX_CONSECUTIVE_RX_ERRORS:
-                    logger.error(f"CAN disconnected — {consecutive_errors} consecutive SPI errors")
+                    logger.error(
+                        f"CAN disconnected — {consecutive_errors} consecutive SPI errors"
+                    )
                     if self.controller:
                         try:
                             self.controller.close()
@@ -281,14 +296,14 @@ class CANManager:
 
             if self.controller.send_message(probe, txbuf=HEALTH_TXBUF):
                 deadline = time.time() + 0.08
-                result = 'pending'
-                while result == 'pending' and time.time() < deadline:
+                result = "pending"
+                while result == "pending" and time.time() < deadline:
                     time.sleep(0.002)
                     try:
                         result = self.controller.check_tx_result(HEALTH_TXBUF)
-                        if result == 'error':
+                        if result == "error":
                             return False
-                        if result == 'success':
+                        if result == "success":
                             return True
                         # Still pending — check if chip hit bus-off
                         eflg = self.controller.get_error_flags()
@@ -299,7 +314,7 @@ class CANManager:
                 # Timed out — abort the stuck transmission so the next
                 # health-check starts with a clean buffer.
                 self.controller.abort_tx(HEALTH_TXBUF)
-                return False   # timed out while pending → assume failure
+                return False  # timed out while pending → assume failure
             else:
                 # TX buffer still busy from a prior (or user) message.
                 # Check if the chip is already in bus-off / error-passive.
@@ -309,7 +324,7 @@ class CANManager:
                         return False
                 except Exception:
                     pass
-                return True   # busy but no error flags → inconclusive, assume OK
+                return True  # busy but no error flags → inconclusive, assume OK
         except Exception:
             return False
 
@@ -320,7 +335,7 @@ class CANManager:
             "direction": "RX",
             "can_id": msg.can_id,
             "dlc": msg.dlc,
-            "data": list(msg.data[:msg.dlc]),
+            "data": list(msg.data[: msg.dlc]),
             "extended": msg.extended,
             "rtr": msg.rtr,
         }
@@ -335,7 +350,9 @@ class CANManager:
     # ----------------------------------------
     # TX
     # ----------------------------------------
-    def send_message(self, can_id: int, data: List[int], extended: bool = False) -> bool:
+    def send_message(
+        self, can_id: int, data: List[int], extended: bool = False
+    ) -> bool:
         if not self.connected or not self.controller:
             raise RuntimeError("CAN not connected")
         if len(data) > 8:
@@ -347,15 +364,17 @@ class CANManager:
 
             if ok:
                 self.stats["tx_total"] += 1
-                self.message_log.append({
-                    "timestamp": datetime.now().isoformat(),
-                    "direction": "TX",
-                    "can_id": can_id,
-                    "dlc": len(data),
-                    "data": data,
-                    "extended": extended,
-                    "rtr": False,
-                })
+                self.message_log.append(
+                    {
+                        "timestamp": datetime.now().isoformat(),
+                        "direction": "TX",
+                        "can_id": can_id,
+                        "dlc": len(data),
+                        "data": data,
+                        "extended": extended,
+                        "rtr": False,
+                    }
+                )
             return ok
 
     # ----------------------------------------

@@ -12,7 +12,6 @@
 import glob as _glob
 import logging
 import os
-import platform
 import socket
 import time
 
@@ -20,11 +19,13 @@ logger = logging.getLogger(__name__)
 
 try:
     import psutil as _psutil
+
     _PSUTIL_AVAILABLE = True
 except ImportError:
     _PSUTIL_AVAILABLE = False
-    logger.warning("psutil not installed — system metrics limited. "
-                   "Run: pip install psutil")
+    logger.warning(
+        "psutil not installed — system metrics limited. " "Run: pip install psutil"
+    )
 
 
 def get_temperature() -> float | None:

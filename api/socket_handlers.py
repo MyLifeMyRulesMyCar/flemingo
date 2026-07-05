@@ -25,8 +25,9 @@ _state = None
 _auth_mgr = None
 
 
-def register_socket_handlers(socketio, state, io_manager, can_manager,
-                              auth_manager_module):
+def register_socket_handlers(
+    socketio, state, io_manager, can_manager, auth_manager_module
+):
     """Register all SocketIO event handlers on the given socketio instance."""
     global _io_manager, _can_manager, _state, _auth_mgr
     _io_manager = io_manager
@@ -52,9 +53,7 @@ def register_socket_handlers(socketio, state, io_manager, can_manager,
             raise ConnectionRefusedError("unauthorized")
 
         _ws_auth[request.sid] = payload
-        logger.info(
-            f"WebSocket: client connected (role={payload.get('role', '?')})"
-        )
+        logger.info(f"WebSocket: client connected (role={payload.get('role', '?')})")
         emit("io_update", {"di": _state.get_di(), "do": _state.get_do()})
         emit("can_status", _can_manager.get_status())
 

@@ -6,10 +6,15 @@
 from flask import Blueprint, jsonify, request
 from api.auth_decorators import require_role
 from api.validators import (
-    ValidationError, parse_body, parse_bool,
-    validate_can_bitrate, validate_can_crystal,
-    validate_can_id, validate_can_payload,
-    validate_count, require_fields,
+    ValidationError,
+    parse_body,
+    parse_bool,
+    validate_can_bitrate,
+    validate_can_crystal,
+    validate_can_id,
+    validate_can_payload,
+    validate_count,
+    require_fields,
 )
 
 can_api = Blueprint("can_api", __name__)
@@ -43,7 +48,9 @@ def connect():
             _can_manager.crystal = validate_can_crystal(data["crystal"])
 
         _can_manager.connect()
-        return jsonify({"message": "CAN connected", "status": _can_manager.get_status()})
+        return jsonify(
+            {"message": "CAN connected", "status": _can_manager.get_status()}
+        )
 
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
@@ -88,8 +95,8 @@ def send():
         require_fields(data, "can_id", "data")
 
         extended = parse_bool(data.get("extended", False), "extended")
-        can_id   = validate_can_id(data["can_id"], extended)
-        payload  = validate_can_payload(data["data"])
+        can_id = validate_can_id(data["can_id"], extended)
+        payload = validate_can_payload(data["data"])
 
         ok = _can_manager.send_message(can_id, payload, extended=extended)
         return jsonify({"success": ok, "can_id": can_id, "data": payload})

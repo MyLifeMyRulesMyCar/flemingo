@@ -52,9 +52,18 @@ def _cram_zip(add_files=None, with_manifest=True):
                 info = zipfile.ZipInfo(arcname)
                 if declared_size is not None:
                     info.file_size = declared_size
-                zf.writestr(info, data if isinstance(data, bytes) else data.encode("utf-8"))
+                zf.writestr(
+                    info, data if isinstance(data, bytes) else data.encode("utf-8")
+                )
         if with_manifest:
-            manifest = json.dumps({"version": "0.5.0", "files": [], "device_id": "test", "created_at": "2026-01-01T00:00:00"})
+            manifest = json.dumps(
+                {
+                    "version": "0.5.0",
+                    "files": [],
+                    "device_id": "test",
+                    "created_at": "2026-01-01T00:00:00",
+                }
+            )
             zf.writestr("backup_manifest.json", manifest)
     buf.seek(0)
     return buf.read()
@@ -64,14 +73,19 @@ def _cram_zip(add_files=None, with_manifest=True):
 # Section 1: Backup creation
 # ═══════════════════════════════════════════════════════════════════
 
+
 def test_backup_creates_zip():
     import core.backup_manager as bm
+
     with tempfile.TemporaryDirectory() as td:
-        cfg = make_config_dir(td, {
-            "reliability.yaml": "circuit_breaker: {can: {failure_threshold: 3}}",
-            "mqtt.yaml":         "broker: {host: 127.0.0.1}",
-            "users.json":        '{"admin": {"role": "admin"}}',
-        })
+        cfg = make_config_dir(
+            td,
+            {
+                "reliability.yaml": "circuit_breaker: {can: {failure_threshold: 3}}",
+                "mqtt.yaml": "broker: {host: 127.0.0.1}",
+                "users.json": '{"admin": {"role": "admin"}}',
+            },
+        )
         bm.CONFIG_DIR = cfg
 
         buf = bm.create_backup(version="0.5.0", device_id="test-pi")
@@ -80,14 +94,15 @@ def test_backup_creates_zip():
         zf = zipfile.ZipFile(buf)
         names = zf.namelist()
         assert "backup_manifest.json" in names, "manifest in zip"
-        assert "reliability.yaml" in names,     "reliability.yaml in zip"
-        assert "mqtt.yaml" in names,             "mqtt.yaml in zip"
-        assert "users.json" in names,            "users.json in zip"
+        assert "reliability.yaml" in names, "reliability.yaml in zip"
+        assert "mqtt.yaml" in names, "mqtt.yaml in zip"
+        assert "users.json" in names, "users.json in zip"
         zf.close()
 
 
 def test_backup_manifest_fields():
     import core.backup_manager as bm
+
     with tempfile.TemporaryDirectory() as td:
         cfg = make_config_dir(td, {"reliability.yaml": "x: 1"})
         bm.CONFIG_DIR = cfg
@@ -105,11 +120,15 @@ def test_backup_manifest_fields():
 
 def test_backup_excludes_secrets():
     import core.backup_manager as bm
+
     with tempfile.TemporaryDirectory() as td:
-        cfg = make_config_dir(td, {
-            "reliability.yaml": "x: 1",
-            "jwt_secret.key":   "SHOULD-NOT-BE-HERE",
-        })
+        cfg = make_config_dir(
+            td,
+            {
+                "reliability.yaml": "x: 1",
+                "jwt_secret.key": "SHOULD-NOT-BE-HERE",
+            },
+        )
         bm.CONFIG_DIR = cfg
 
         buf = bm.create_backup()
@@ -125,8 +144,10 @@ def test_backup_excludes_secrets():
 # Section 2: Restore
 # ═══════════════════════════════════════════════════════════════════
 
+
 def test_restore_round_trip():
     import core.backup_manager as bm
+
     content = "circuit_breaker:\n  can:\n    failure_threshold: 5\n"
     with tempfile.TemporaryDirectory() as td:
         cfg_src = make_config_dir(td, {"reliability.yaml": content})
@@ -149,15 +170,19 @@ def test_restore_round_trip():
 
 def test_restore_rejects_path_traversal():
     import core.backup_manager as bm
-    zip_bytes = _cram_zip({
-        "../../etc/passwd": "root:x:0:0:root:/root:/bin/bash",
-    })
+
+    zip_bytes = _cram_zip(
+        {
+            "../../etc/passwd": "root:x:0:0:root:/root:/bin/bash",
+        }
+    )
     with pytest.raises(ValueError):
         bm.restore_backup(zip_bytes, target_dir="/tmp")
 
 
 def test_restore_rejects_missing_manifest():
     import core.backup_manager as bm
+
     zip_bytes = _cram_zip({"reliability.yaml": "x: 1"}, with_manifest=False)
     with pytest.raises(ValueError):
         bm.restore_backup(zip_bytes, target_dir="/tmp")
@@ -178,9 +203,12 @@ def test_restore_rejects_zip_bomb():
 
 def test_restore_rejects_bad_yaml():
     import core.backup_manager as bm
-    zip_bytes = _cram_zip({
-        "reliability.yaml": "} this is not: valid: yaml: [:",
-    })
+
+    zip_bytes = _cram_zip(
+        {
+            "reliability.yaml": "} this is not: valid: yaml: [:",
+        }
+    )
     with tempfile.TemporaryDirectory() as td:
         target = os.path.join(td, "dst")
         os.makedirs(target)
@@ -193,11 +221,14 @@ def test_restore_rejects_bad_yaml():
 
 def test_restore_whitelist():
     import core.backup_manager as bm
+
     yaml_content = "circuit_breaker: {can: {failure_threshold: 1}}"
-    zip_bytes = _cram_zip({
-        "reliability.yaml": yaml_content,
-        "evil.sh":          "#!/bin/bash\nrm -rf /\n",
-    })
+    zip_bytes = _cram_zip(
+        {
+            "reliability.yaml": yaml_content,
+            "evil.sh": "#!/bin/bash\nrm -rf /\n",
+        }
+    )
     with tempfile.TemporaryDirectory() as td:
         target = os.path.join(td, "dst")
         os.makedirs(target)
@@ -206,15 +237,18 @@ def test_restore_whitelist():
         assert "reliability.yaml" in restored, "whitelisted file restored"
         assert "evil.sh" not in restored, "non-whitelisted file not restored"
 
-        assert os.path.exists(os.path.join(target, "reliability.yaml")), \
-            "whitelisted file written to disk"
-        assert not os.path.exists(os.path.join(target, "evil.sh")), \
-            "non-whitelisted file NOT written to disk"
+        assert os.path.exists(
+            os.path.join(target, "reliability.yaml")
+        ), "whitelisted file written to disk"
+        assert not os.path.exists(
+            os.path.join(target, "evil.sh")
+        ), "non-whitelisted file NOT written to disk"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Section 3: System metrics
 # ═══════════════════════════════════════════════════════════════════
+
 
 def test_metrics_shape():
     from core.system_metrics import collect_metrics
@@ -222,8 +256,15 @@ def test_metrics_shape():
     result = collect_metrics(mqtt_manager=None)
 
     required_keys = [
-        "cpu_percent", "load_average", "memory", "disk",
-        "temperature_c", "network", "process", "uptime_seconds", "mqtt",
+        "cpu_percent",
+        "load_average",
+        "memory",
+        "disk",
+        "temperature_c",
+        "network",
+        "process",
+        "uptime_seconds",
+        "mqtt",
     ]
     for key in required_keys:
         assert key in result, f"metrics dict has key '{key}'"
@@ -245,13 +286,15 @@ def test_temperature_graceful():
     from core.system_metrics import get_temperature
 
     t = get_temperature()
-    assert t is None or isinstance(t, (int, float)), \
-        f"get_temperature() returned {type(t).__name__}, expected float or None"
+    assert t is None or isinstance(
+        t, (int, float)
+    ), f"get_temperature() returned {type(t).__name__}, expected float or None"
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Section 4: Validators
 # ═══════════════════════════════════════════════════════════════════
+
 
 class FakeFileObj:
     def __init__(self, data):
@@ -263,7 +306,7 @@ class FakeFileObj:
             return b""
         if size < 0:
             size = len(self._data) - self.pos
-        chunk = self._data[self.pos:self.pos + size]
+        chunk = self._data[self.pos : self.pos + size]
         self.pos += size
         return chunk
 
