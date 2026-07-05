@@ -198,14 +198,6 @@ class AuthManager:
         logger.warning("  This password is shown ONCE and is not recoverable.")
         logger.warning("  You will be required to change it on first login.")
         logger.warning(banner)
-        # Also print directly (not just log) so it's visible even if
-        # logging is redirected straight to a file with no console echo.
-        print(banner)
-        print("FIRST BOOT - default admin account created")
-        print(f"  username: admin")
-        print(f"  password: {password}")
-        print("  This password is shown ONCE - store it now.")
-        print(banner)
 
     # ----------------------------------------
     # User CRUD
