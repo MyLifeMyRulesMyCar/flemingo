@@ -28,7 +28,7 @@ from core.logging_config import setup_logging
 setup_logging()
 
 from flask import Flask, jsonify, send_from_directory, request
-from flask_socketio import SocketIO, emit, ConnectionRefusedError
+from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 from core.io_manager import IOManager
@@ -43,12 +43,12 @@ from api.modbus_routes import modbus_api, set_modbus_manager
 from api.health_routes import health_api, set_managers
 from api.auth_routes import auth_api
 from core.auth_manager import init_auth_manager
-from core.auth_manager import role_at_least as _role_at_least
-from core import auth_manager as auth_manager_module
+import core.auth_manager as _auth_mod
 from core.config import load_reliability_config, load_mqtt_config, VERSION
 from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
 from api.system_routes import system_api, set_system_managers
+from api.socket_handlers import register_socket_handlers
 
 logger = logging.getLogger(__name__)
 
@@ -159,77 +159,11 @@ can_manager.subscribe(broadcast_can_message)
 # ============================================
 # WebSocket events — Phase 10 security: JWT validated on connect,
 # role checked on actuation commands.
+# Handlers extracted to api/socket_handlers.py so they can be tested
+# independently with flask_socketio.test_client().
 # ============================================
-_ws_auth = {}  # sid → decoded JWT payload
-
-@socketio.on("connect")
-def handle_connect(auth=None):
-    token = auth.get("token") if auth else None
-    if not token:
-        logger.warning("WebSocket: rejected — missing auth token")
-        raise ConnectionRefusedError("unauthorized")
-
-    mgr = auth_manager_module.auth_manager
-    if mgr is None:
-        mgr = auth_manager_module.init_auth_manager()
-
-    try:
-        payload = mgr.verify_token(token, expected_type="access")
-    except Exception as e:
-        logger.warning(f"WebSocket: rejected — invalid token: {e}")
-        raise ConnectionRefusedError("unauthorized")
-
-    _ws_auth[request.sid] = payload
-    logger.info(f"WebSocket: client connected (role={payload.get('role','?')})")
-    emit("io_update", {"di": state.get_di(), "do": state.get_do()})
-    emit("can_status", can_manager.get_status())
-
-
-@socketio.on("disconnect")
-def handle_disconnect():
-    _ws_auth.pop(request.sid, None)
-    logger.info("WebSocket: client disconnected")
-
-
-@socketio.on("request_io")
-def handle_request_io():
-    emit("io_update", {"di": state.get_di(), "do": state.get_do()})
-
-
-@socketio.on("set_do")
-def handle_set_do(data):
-    payload = _ws_auth.get(request.sid, {})
-    role = payload.get("role", "")
-    if not _role_at_least(role, "operator"):
-        emit("error", {"message": "Operator role required"})
-        return
-
-    ch = data.get("channel")
-    value = data.get("value")
-
-    if ch is None or value is None:
-        emit("error", {"message": "Missing channel or value"})
-        return
-    if not (0 <= ch < 4):
-        emit("error", {"message": "Invalid channel"})
-        return
-
-    try:
-        io_manager.write_output(ch, value)
-    except Exception as e:
-        emit("error", {"message": str(e)})
-        return
-
-    state.set_do(ch, value)
-
-    socketio.emit("io_update", {"di": state.get_di(), "do": state.get_do()}, namespace="/")
-    logger.info(f"WebSocket: DO{ch} set to {value}")
-
-
-@socketio.on("request_can_status")
-def handle_request_can_status():
-    emit("can_status", can_manager.get_status())
-
+register_socket_handlers(socketio, state, io_manager, can_manager,
+                          _auth_mod)  # core.auth_manager module
 
 # ============================================
 # Background broadcast thread
