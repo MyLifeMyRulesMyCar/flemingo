@@ -28,7 +28,7 @@ from core.logging_config import setup_logging
 setup_logging()
 
 from flask import Flask, jsonify, send_from_directory, request
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, ConnectionRefusedError
 from flask_cors import CORS
 
 from core.io_manager import IOManager
@@ -167,7 +167,7 @@ def handle_connect(auth=None):
     token = auth.get("token") if auth else None
     if not token:
         logger.warning("WebSocket: rejected — missing auth token")
-        return False
+        raise ConnectionRefusedError("unauthorized")
 
     mgr = auth_manager_module.auth_manager
     if mgr is None:
@@ -177,7 +177,7 @@ def handle_connect(auth=None):
         payload = mgr.verify_token(token, expected_type="access")
     except Exception as e:
         logger.warning(f"WebSocket: rejected — invalid token: {e}")
-        return False
+        raise ConnectionRefusedError("unauthorized")
 
     _ws_auth[request.sid] = payload
     logger.info(f"WebSocket: client connected (role={payload.get('role','?')})")

@@ -7,8 +7,10 @@ export function connectSocket(token) {
   socket = io("/", { auth: { token } });
 
   socket.on("connect_error", (err) => {
-    sessionStorage.clear();
-    window.location.href = "/login";
+    if (err.message === "unauthorized") {
+      sessionStorage.clear();
+      window.location.href = "/login";
+    }
   });
 
   return socket;

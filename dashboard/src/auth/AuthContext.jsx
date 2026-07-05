@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import {
   apiPost,
   storeAuth,
@@ -53,6 +53,12 @@ export function AuthProvider({ children }) {
       setError("Network error — is Flask running?");
       setLoading(false);
       return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (storedToken) {
+      connectSocket(storedToken);
     }
   }, []);
 
