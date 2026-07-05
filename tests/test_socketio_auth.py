@@ -132,17 +132,10 @@ class TestSocketHandlers:
         client.disconnect()
 
     def test_connect_rejects_no_token(self, socketio_app):
-        # Connection without token should be rejected.
-        # The server raises ConnectionRefusedError("unauthorized").
-        # The test client may or may not establish a connection in this case;
-        # we just verify the handler doesn't crash unexpectedly.
-        try:
-            client = socketio_app.sio.test_client(
-                socketio_app, namespace="/", auth={}
-            )
-            client.disconnect()
-        except (RuntimeError, Exception):
-            pass  # expected — connection refused or never fully established
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={}
+        )
+        assert client.is_connected(namespace="/") is False
 
     def test_connect_rejects_expired_token(self, socketio_app, tmp_path):
         from core.auth_manager import AuthManager
@@ -156,15 +149,10 @@ class TestSocketHandlers:
         token = mgr.issue_access_token(
             {"username": "x", "role": "operator", "must_change_password": False}
         )
-        # Expired token — server raises ConnectionRefusedError("unauthorized").
-        # The test client connection should fail; we just verify no unhandled crash.
-        try:
-            client = socketio_app.sio.test_client(
-                socketio_app, namespace="/", auth={"token": token}
-            )
-            client.disconnect()
-        except (RuntimeError, Exception):
-            pass  # expected
+        client = socketio_app.sio.test_client(
+            socketio_app, namespace="/", auth={"token": token}
+        )
+        assert client.is_connected(namespace="/") is False
 
     def test_set_do_blocks_viewer_role(self, socketio_app, shared_auth):
         token = shared_auth.issue_access_token(
