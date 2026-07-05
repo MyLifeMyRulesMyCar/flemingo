@@ -15,44 +15,9 @@ import sys
 import tempfile
 import zipfile
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def ok(msg):
-    print(f"✅ {msg}")
-
-
-def fail(msg):
-    print(f"❌ {msg}")
-    sys.exit(1)
-
-
-def must_raise(exc_type, fn, *args, msg="", **kwargs):
-    """Assert fn(*args, **kwargs) raises exc_type."""
-    try:
-        fn(*args, **kwargs)
-        fail(f"Expected {exc_type.__name__} but none raised — {msg or fn.__name__}{args}")
-    except exc_type:
-        pass
-    except Exception as e:
-        if isinstance(e, exc_type):
-            return
-        fail(f"Expected {exc_type.__name__}, got {type(e).__name__}: {e} — {msg}")
-
-
-def must_equal(result, expected, msg=""):
-    if result != expected:
-        fail(f"Expected {expected!r}, got {result!r} — {msg}")
-
-
-def must_contains(haystack, needle, msg=""):
-    if needle not in haystack:
-        fail(f"Expected {haystack!r} to contain {needle!r} — {msg}")
-
-
-def must_not_contain(haystack, needle, msg=""):
-    if needle in haystack:
-        fail(f"Expected {haystack!r} to NOT contain {needle!r} — {msg}")
 
 
 def make_config_dir(base, files=None):
@@ -114,12 +79,11 @@ def test_backup_creates_zip():
 
         zf = zipfile.ZipFile(buf)
         names = zf.namelist()
-        must_contains(names, "backup_manifest.json", "manifest in zip")
-        must_contains(names, "reliability.yaml",     "reliability.yaml in zip")
-        must_contains(names, "mqtt.yaml",             "mqtt.yaml in zip")
-        must_contains(names, "users.json",            "users.json in zip")
+        assert "backup_manifest.json" in names, "manifest in zip"
+        assert "reliability.yaml" in names,     "reliability.yaml in zip"
+        assert "mqtt.yaml" in names,             "mqtt.yaml in zip"
+        assert "users.json" in names,            "users.json in zip"
         zf.close()
-        ok("test_backup_creates_zip")
 
 
 def test_backup_manifest_fields():
@@ -133,11 +97,10 @@ def test_backup_manifest_fields():
         manifest = json.loads(zf.read("backup_manifest.json").decode("utf-8"))
         zf.close()
 
-        must_equal(manifest["version"],   "9.9.9")
-        must_equal(manifest["device_id"], "unit-99")
-        must_contains(manifest, "created_at")
-        must_contains(manifest, "files")
-        ok("test_backup_manifest_fields")
+        assert manifest["version"] == "9.9.9"
+        assert manifest["device_id"] == "unit-99"
+        assert "created_at" in manifest
+        assert "files" in manifest
 
 
 def test_backup_excludes_secrets():
@@ -154,9 +117,8 @@ def test_backup_excludes_secrets():
         names = zf.namelist()
         zf.close()
 
-        must_contains(names, "reliability.yaml", "reliability.yaml included")
-        must_not_contain(names, "jwt_secret.key", "jwt_secret.key excluded")
-        ok("test_backup_excludes_secrets")
+        assert "reliability.yaml" in names, "reliability.yaml included"
+        assert "jwt_secret.key" not in names, "jwt_secret.key excluded"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -178,13 +140,11 @@ def test_restore_round_trip():
         os.makedirs(target)
 
         restored = bm.restore_backup(zip_bytes, target_dir=target)
-        must_contains(restored, "reliability.yaml", "reliability.yaml restored")
+        assert "reliability.yaml" in restored, "reliability.yaml restored"
 
         with open(os.path.join(target, "reliability.yaml"), "r") as f:
             restored_content = f.read()
-        must_equal(restored_content, content, "restored file content matches original")
-
-        ok("test_restore_round_trip")
+        assert restored_content == content, "restored file content matches original"
 
 
 def test_restore_rejects_path_traversal():
@@ -192,17 +152,15 @@ def test_restore_rejects_path_traversal():
     zip_bytes = _cram_zip({
         "../../etc/passwd": "root:x:0:0:root:/root:/bin/bash",
     })
-    must_raise(ValueError, bm.restore_backup, zip_bytes, target_dir="/tmp",
-               msg="path traversal should raise ValueError")
-    ok("test_restore_rejects_path_traversal")
+    with pytest.raises(ValueError):
+        bm.restore_backup(zip_bytes, target_dir="/tmp")
 
 
 def test_restore_rejects_missing_manifest():
     import core.backup_manager as bm
     zip_bytes = _cram_zip({"reliability.yaml": "x: 1"}, with_manifest=False)
-    must_raise(ValueError, bm.restore_backup, zip_bytes, target_dir="/tmp",
-               msg="missing manifest should raise ValueError")
-    ok("test_restore_rejects_missing_manifest")
+    with pytest.raises(ValueError):
+        bm.restore_backup(zip_bytes, target_dir="/tmp")
 
 
 def test_restore_rejects_zip_bomb():
@@ -212,11 +170,10 @@ def test_restore_rejects_zip_bomb():
     try:
         bm._MAX_BYTES = 50
         zip_bytes = _cram_zip({"reliability.yaml": "x: 1"}, with_manifest=True)
-        must_raise(ValueError, bm.restore_backup, zip_bytes, target_dir="/tmp",
-                   msg="zip exceeding threshold should raise ValueError")
+        with pytest.raises(ValueError):
+            bm.restore_backup(zip_bytes, target_dir="/tmp")
     finally:
         bm._MAX_BYTES = original_max
-    ok("test_restore_rejects_zip_bomb")
 
 
 def test_restore_rejects_bad_yaml():
@@ -227,13 +184,11 @@ def test_restore_rejects_bad_yaml():
     with tempfile.TemporaryDirectory() as td:
         target = os.path.join(td, "dst")
         os.makedirs(target)
-        must_raise(ValueError, bm.restore_backup, zip_bytes, target_dir=target,
-                   msg="bad yaml should raise ValueError")
+        with pytest.raises(ValueError):
+            bm.restore_backup(zip_bytes, target_dir=target)
 
         yaml_dest = os.path.join(target, "reliability.yaml")
-        must_equal(os.path.exists(yaml_dest), False,
-                   "no file written for bad yaml")
-        ok("test_restore_rejects_bad_yaml")
+        assert not os.path.exists(yaml_dest), "no file written for bad yaml"
 
 
 def test_restore_whitelist():
@@ -248,14 +203,13 @@ def test_restore_whitelist():
         os.makedirs(target)
         restored = bm.restore_backup(zip_bytes, target_dir=target)
 
-        must_contains(restored, "reliability.yaml", "whitelisted file restored")
-        must_not_contain(restored, "evil.sh", "non-whitelisted file not restored")
+        assert "reliability.yaml" in restored, "whitelisted file restored"
+        assert "evil.sh" not in restored, "non-whitelisted file not restored"
 
-        must_equal(os.path.exists(os.path.join(target, "reliability.yaml")), True,
-                   "whitelisted file written to disk")
-        must_equal(os.path.exists(os.path.join(target, "evil.sh")), False,
-                   "non-whitelisted file NOT written to disk")
-        ok("test_restore_whitelist")
+        assert os.path.exists(os.path.join(target, "reliability.yaml")), \
+            "whitelisted file written to disk"
+        assert not os.path.exists(os.path.join(target, "evil.sh")), \
+            "non-whitelisted file NOT written to disk"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -272,34 +226,27 @@ def test_metrics_shape():
         "temperature_c", "network", "process", "uptime_seconds", "mqtt",
     ]
     for key in required_keys:
-        must_contains(result, key, f"metrics dict has key '{key}'")
+        assert key in result, f"metrics dict has key '{key}'"
 
     if result.get("memory") is not None:
         mem = result["memory"]
         for k in ("total", "used", "available", "percent"):
-            must_contains(mem, k, f"memory dict has key '{k}'")
+            assert k in mem, f"memory dict has key '{k}'"
 
     if result.get("load_average") is not None:
         la = result["load_average"]
         for k in ("1min", "5min", "15min"):
-            must_contains(la, k, f"load_average dict has key '{k}'")
+            assert k in la, f"load_average dict has key '{k}'"
 
-    must_equal(result["mqtt"], None, "mqtt is None when no manager provided")
-    ok("test_metrics_shape")
+    assert result["mqtt"] is None, "mqtt is None when no manager provided"
 
 
 def test_temperature_graceful():
     from core.system_metrics import get_temperature
 
     t = get_temperature()
-    if t is None:
-        pass
-    elif isinstance(t, (int, float)):
-        pass
-    else:
-        fail(f"get_temperature() returned {type(t).__name__}, expected float or None")
-
-    ok("test_temperature_graceful")
+    assert t is None or isinstance(t, (int, float)), \
+        f"get_temperature() returned {type(t).__name__}, expected float or None"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -325,35 +272,11 @@ def test_validate_backup_file():
     from api.validators import ValidationError, validate_backup_file
 
     valid = validate_backup_file(FakeFileObj(b"PK\x03\x04hello world"))
-    must_equal(len(valid), 15, "valid file returns bytes")
+    assert len(valid) == 15, "valid file returns bytes"
 
-    must_raise(ValidationError, validate_backup_file, FakeFileObj(b""),
-               msg="empty file rejected")
+    with pytest.raises(ValidationError):
+        validate_backup_file(FakeFileObj(b""))
 
     big_data = b"x" * (10 * 1024 * 1024 + 1)
-    must_raise(ValidationError, validate_backup_file, FakeFileObj(big_data),
-               msg="oversized file rejected")
-    ok("test_validate_backup_file")
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Runner
-# ═══════════════════════════════════════════════════════════════════
-if __name__ == "__main__":
-    test_backup_creates_zip()
-    test_backup_manifest_fields()
-    test_backup_excludes_secrets()
-
-    test_restore_round_trip()
-    test_restore_rejects_path_traversal()
-    test_restore_rejects_missing_manifest()
-    test_restore_rejects_zip_bomb()
-    test_restore_rejects_bad_yaml()
-    test_restore_whitelist()
-
-    test_metrics_shape()
-    test_temperature_graceful()
-
-    test_validate_backup_file()
-
-    print("\nAll system tests passed.")
+    with pytest.raises(ValidationError):
+        validate_backup_file(FakeFileObj(big_data))

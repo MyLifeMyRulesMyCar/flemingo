@@ -18,19 +18,12 @@ import os
 import threading
 import time
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.state import ThreadSafeState
 from core.resilience import CircuitBreaker, CircuitOpenError
-
-failures = []
-
-
-def check(label, condition):
-    status = "✅" if condition else "❌"
-    print(f"{status} {label}")
-    if not condition:
-        failures.append(label)
 
 
 def test_state_concurrent_reads_writes():
@@ -81,7 +74,7 @@ def test_state_concurrent_reads_writes():
     for t in threads:
         t.join(timeout=2)
 
-    check("no exceptions across concurrent DI readers/writers", len(errors) == 0)
+    assert len(errors) == 0, "no exceptions across concurrent DI readers/writers"
     if errors:
         for e in errors[:5]:
             print(f"     {e}")
@@ -127,7 +120,7 @@ def test_state_individual_channel_writes():
     for t in threads:
         t.join(timeout=2)
 
-    check("no exceptions across concurrent per-channel DO writes", len(errors) == 0)
+    assert len(errors) == 0, "no exceptions across concurrent per-channel DO writes"
     if errors:
         for e in errors[:5]:
             print(f"     {e}")
@@ -173,25 +166,15 @@ def test_circuit_breaker_concurrent_failures():
     # rejected as CircuitOpenError WITHOUT incrementing call_count -
     # that's the entire point of the breaker (stop touching the
     # failing resource once it's known to be down).
-    check("breaker stopped calling the failing function once open",
-          call_count["value"] <= breaker.failure_threshold + len(threads))
-    check("breaker rejected the remaining attempts via CircuitOpenError",
-          open_errors["value"] > 0)
-    check("breaker ended in OPEN state", breaker.get_state()["state"] == "open")
-    check("no attempts were lost or double-counted past a sane bound",
-          call_count["value"] + open_errors["value"] <= 200)
-
-
-if __name__ == "__main__":
-    test_state_concurrent_reads_writes()
-    test_state_individual_channel_writes()
-    test_circuit_breaker_concurrent_failures()
-
-    print()
-    if failures:
-        print(f"FAILED: {len(failures)} check(s) failed:")
-        for f in failures:
-            print(f"  - {f}")
-        sys.exit(1)
-    else:
-        print("All race-condition checks passed.")
+    assert call_count["value"] <= breaker.failure_threshold + len(threads), (
+        "breaker stopped calling the failing function once open"
+    )
+    assert open_errors["value"] > 0, (
+        "breaker rejected the remaining attempts via CircuitOpenError"
+    )
+    assert breaker.get_state()["state"] == "open", (
+        "breaker ended in OPEN state"
+    )
+    assert call_count["value"] + open_errors["value"] <= 200, (
+        "no attempts were lost or double-counted past a sane bound"
+    )

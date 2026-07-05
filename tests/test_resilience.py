@@ -3,12 +3,13 @@
 Phase 5 Test - core/resilience.py
 
 Pure logic, no hardware needed. Run directly:
-    python3 tests/test_resilience.py
+    pytest tests/test_resilience.py
 """
 
-import sys
 import os
+import sys
 import time
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -16,15 +17,6 @@ from core.resilience import (
     CircuitBreaker, CircuitState, CircuitOpenError,
     retry_with_backoff, HealthStatus,
 )
-
-failures = []
-
-
-def check(label, condition):
-    status = "✅" if condition else "❌"
-    print(f"{status} {label}")
-    if not condition:
-        failures.append(label)
 
 
 def test_circuit_breaker_opens_after_threshold():
@@ -40,14 +32,10 @@ def test_circuit_breaker_opens_after_threshold():
         except ValueError:
             pass
 
-    check("breaker opens after reaching failure_threshold",
-          breaker.state == CircuitState.OPEN)
+    assert breaker.state == CircuitState.OPEN, "breaker opens after reaching failure_threshold"
 
-    try:
+    with pytest.raises(CircuitOpenError):
         always_fails()
-        check("OPEN breaker rejects calls without running them", False)
-    except CircuitOpenError:
-        check("OPEN breaker rejects calls without running them", True)
 
 
 def test_circuit_breaker_half_open_recovery():
@@ -64,14 +52,13 @@ def test_circuit_breaker_half_open_recovery():
             flaky(True)
         except ValueError:
             pass
-    check("breaker open after 2 failures", breaker.state == CircuitState.OPEN)
+    assert breaker.state == CircuitState.OPEN, "breaker open after 2 failures"
 
     time.sleep(0.35)  # let the timeout elapse
 
     result = flaky(False)  # this call should be allowed through as a probe
-    check("HALF_OPEN probe succeeds and closes the breaker", result == "ok")
-    check("breaker is CLOSED after a successful probe",
-          breaker.state == CircuitState.CLOSED)
+    assert result == "ok", "HALF_OPEN probe succeeds and closes the breaker"
+    assert breaker.state == CircuitState.CLOSED, "breaker is CLOSED after a successful probe"
 
 
 def test_circuit_breaker_independent_instances():
@@ -92,9 +79,9 @@ def test_circuit_breaker_independent_instances():
     except ValueError:
         pass
 
-    check("breaker A opened independently", breaker_a.state == CircuitState.OPEN)
-    check("breaker B unaffected by breaker A", breaker_b.state == CircuitState.CLOSED)
-    check("breaker B still works", succeeds() == "ok")
+    assert breaker_a.state == CircuitState.OPEN, "breaker A opened independently"
+    assert breaker_b.state == CircuitState.CLOSED, "breaker B unaffected by breaker A"
+    assert succeeds() == "ok", "breaker B still works"
 
 
 def test_retry_with_backoff_eventually_succeeds():
@@ -108,8 +95,8 @@ def test_retry_with_backoff_eventually_succeeds():
         return "ok"
 
     result = succeeds_on_third_try()
-    check("retry_with_backoff returns the eventual success value", result == "ok")
-    check("retry_with_backoff made exactly 3 attempts", attempts["count"] == 3)
+    assert result == "ok", "retry_with_backoff returns the eventual success value"
+    assert attempts["count"] == 3, "retry_with_backoff made exactly 3 attempts"
 
 
 def test_retry_with_backoff_exhausts():
@@ -117,42 +104,18 @@ def test_retry_with_backoff_exhausts():
     def always_fails():
         raise ValueError("boom")
 
-    try:
+    with pytest.raises(ValueError):
         always_fails()
-        check("retry_with_backoff raises after exhausting retries", False)
-    except ValueError:
-        check("retry_with_backoff raises after exhausting retries", True)
 
 
 def test_health_status_aggregation():
     hs = HealthStatus()
     hs.update("gpio", "healthy")
     hs.update("can", "healthy")
-    check("overall status is healthy when all components are healthy",
-          hs.get_overall_status() == "healthy")
+    assert hs.get_overall_status() == "healthy", "overall status is healthy when all components are healthy"
 
     hs.update("modbus", "degraded")
-    check("overall status is degraded when one component is degraded",
-          hs.get_overall_status() == "degraded")
+    assert hs.get_overall_status() == "degraded", "overall status is degraded when one component is degraded"
 
     hs.update("can", "unhealthy")
-    check("overall status is unhealthy when any component is unhealthy",
-          hs.get_overall_status() == "unhealthy")
-
-
-if __name__ == "__main__":
-    test_circuit_breaker_opens_after_threshold()
-    test_circuit_breaker_half_open_recovery()
-    test_circuit_breaker_independent_instances()
-    test_retry_with_backoff_eventually_succeeds()
-    test_retry_with_backoff_exhausts()
-    test_health_status_aggregation()
-
-    print()
-    if failures:
-        print(f"FAILED: {len(failures)} check(s) failed:")
-        for f in failures:
-            print(f"  - {f}")
-        sys.exit(1)
-    else:
-        print("All resilience checks passed.")
+    assert hs.get_overall_status() == "unhealthy", "overall status is unhealthy when any component is unhealthy"

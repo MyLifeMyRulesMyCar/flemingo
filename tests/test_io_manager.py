@@ -1,62 +1,62 @@
 #!/usr/bin/env python3
-"""
-Phase 1 Test - Digital Inputs (live state monitor)
-Purple Pi OH2: GPIO132, GPIO134, GPIO98, GPIO99
-
-Polls all 4 DI channels and prints whenever any one changes state.
-Inputs are configured with PULL_DOWN bias, so they read LOW (0) by
-default with nothing wired. Bring a channel HIGH by connecting it
-to 3.3V (e.g. a push-button or jumper wire from a 3.3V pin) to see
-it flip to 1.
-
-Run:
-    sudo chmod 666 /dev/gpiochip1 /dev/gpiochip3 /dev/gpiochip4
-    source venv/bin/activate
-    python3 tests/test_di_monitor.py
-    (Ctrl+C to stop)
-"""
+# tests/test_io_manager.py
+# Unit tests for IOManager logic — forced simulation mode via gpiod mock.
+# Replaces the former duplicate of test_di_monitor.py.
 
 import sys
 import os
-import time
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.io_manager import IOManager, DI_CHANNELS, INPUT_PINS
+
+import pytest
+from unittest.mock import patch, MagicMock
 
 
-def main():
-    print("=" * 60)
-    print("Phase 1 - Digital Input Monitor")
-    print("=" * 60)
-
-    mgr = IOManager()
-    status = mgr.get_status()
-    print(f"Mode: {'SIMULATION' if status['simulation'] else 'HARDWARE'}")
-
-    for name in DI_CHANNELS:
-        chip, line = INPUT_PINS[name]
-        print(f"  {name}: {chip} offset {line}")
-
-    print("\nWatching for changes... Ctrl+C to stop\n")
-
-    previous = mgr.read_all_inputs()
-    print(f"Initial state: {dict(zip(DI_CHANNELS, previous))}")
-
-    try:
-        while True:
-            current = mgr.read_all_inputs()
-            for i, name in enumerate(DI_CHANNELS):
-                if current[i] != previous[i]:
-                    state = "HIGH (1)" if current[i] else "LOW (0)"
-                    print(f"🔘 {name} -> {state}")
-            previous = current
-            time.sleep(0.05)
-
-    except KeyboardInterrupt:
-        print("\n\nMonitoring stopped")
-    finally:
-        mgr.close()
+@pytest.fixture
+def sim_io():
+    """IOManager forced into simulation mode regardless of gpiod availability."""
+    with patch("gpiod.Chip", side_effect=OSError("mock — no hardware")):
+        from core.io_manager import IOManager
+        io = IOManager()
+        io._sim_di = [0, 0, 0, 0]
+        io._sim_do = [0, 0, 0, 0]
+        return io
 
 
-if __name__ == "__main__":
-    main()
+class TestIOManagerSimulation:
+    def test_construction_sets_simulation(self, sim_io):
+        assert sim_io.simulation, "should fall back to sim when gpiod unavailable"
+
+    def test_sim_di_initial_all_zero(self, sim_io):
+        assert sim_io.read_all_inputs() == [0, 0, 0, 0]
+
+    def test_sim_di_write_then_read(self, sim_io):
+        sim_io._sim_di[1] = 1
+        sim_io._sim_di[3] = 1
+        assert sim_io.read_all_inputs() == [0, 1, 0, 1]
+
+    def test_sim_do_write_then_readback(self, sim_io):
+        sim_io.write_output(0, 1)
+        sim_io.write_output(2, 1)
+        assert sim_io._sim_do == [1, 0, 1, 0]
+
+    def test_sim_do_write_sets_state(self, sim_io):
+        sim_io.write_output(1, 1)
+        assert sim_io._sim_do[1] == 1
+        sim_io.write_output(1, 0)
+        assert sim_io._sim_do[1] == 0
+
+    def test_sim_do_any_truthy_becomes_one(self, sim_io):
+        sim_io.write_output(0, True)
+        sim_io.write_output(1, 42)
+        assert sim_io._sim_do[0] == 1
+        assert sim_io._sim_do[1] == 1
+
+    def test_get_status(self, sim_io):
+        status = sim_io.get_status()
+        assert "simulation" in status
+        assert status["simulation"] is True
+
+    def test_channel_lists_exist(self, sim_io):
+        from core.io_manager import DI_CHANNELS, DO_CHANNELS
+        assert len(DI_CHANNELS) == 4
+        assert len(DO_CHANNELS) == 4
