@@ -46,12 +46,14 @@ export default function Overview() {
       setDi(data.di || []);
       setDo(data.do || []);
     };
+    const onMetrics = setMetrics;
     sock.on("io_update", onIoUpdate);
-    sock.on("system_metrics", setMetrics);
+    sock.on("system_metrics", onMetrics);
+    sock.emit("request_io");
 
     return () => {
       sock.off("io_update", onIoUpdate);
-      sock.off("system_metrics");
+      sock.off("system_metrics", onMetrics);
     };
   }, []);
 

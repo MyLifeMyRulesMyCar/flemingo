@@ -31,7 +31,8 @@ export default function IO() {
   useEffect(() => {
     const sock = getSocket();
     if (!sock) return;
-    sock.on("io_update", (data) => {
+
+    function onIoUpdate(data) {
       const newDi = data.di || [];
       const newDo = data.do || [];
       setDi(newDi);
@@ -56,8 +57,12 @@ export default function IO() {
         });
         return newDo;
       });
-    });
-    return () => sock.off("io_update");
+    }
+
+    sock.on("io_update", onIoUpdate);
+    sock.emit("request_io");
+
+    return () => sock.off("io_update", onIoUpdate);
   }, []);
 
   const toggleDO = async (ch) => {

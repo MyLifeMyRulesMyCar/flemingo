@@ -47,6 +47,10 @@ class PurpleIODaemon:
         self.running = True
         self.loop_count = 0
         self.last_di = [0, 0, 0, 0]
+        self._di_candidate = [0, 0, 0, 0]
+        self._di_stable_count = [0, 0, 0, 0]
+        self.debounce_reads = 3   # ~30ms at 0.1s poll — tune for your switches
+        self._di_initialized = False
         self.consecutive_errors = 0
         self.max_consecutive_errors = 10
         self._thread = None
@@ -105,8 +109,20 @@ class PurpleIODaemon:
 
                 self.consecutive_errors = 0
 
+                if not self._di_initialized:
+                    self.last_di = list(di_values)
+                    self._di_candidate = list(di_values)
+                    self._di_stable_count = [self.debounce_reads] * 4
+                    self._di_initialized = True
+
                 for i, val in enumerate(di_values):
-                    if val != self.last_di[i]:
+                    if val == self._di_candidate[i]:
+                        self._di_stable_count[i] += 1
+                    else:
+                        self._di_candidate[i] = val
+                        self._di_stable_count[i] = 1
+
+                    if self._di_stable_count[i] >= self.debounce_reads and val != self.last_di[i]:
                         logger.info(f"Daemon: DI{i} changed {self.last_di[i]} -> {val}")
                         self.last_di[i] = val
 
