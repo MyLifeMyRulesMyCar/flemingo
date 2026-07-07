@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { apiGet, apiPost, apiDelete } from "../api/client.js";
+import { getSocket } from "../api/socket.js";
 import StatusLed from "../components/StatusLed.jsx";
 import ConfirmModal from "../components/ConfirmModal.jsx";
 import { useToast } from "../components/Toast.jsx";
@@ -45,6 +46,17 @@ export default function Modbus() {
       .then((r) => r.json())
       .then((d) => setPorts(d.ports || {}))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const sock = getSocket();
+    if (!sock) return;
+
+    const onDevices = (data) => {
+      setDevices(data.devices || []);
+    };
+    sock.on("modbus_devices", onDevices);
+    return () => sock.off("modbus_devices", onDevices);
   }, []);
 
   const handleAdd = async () => {

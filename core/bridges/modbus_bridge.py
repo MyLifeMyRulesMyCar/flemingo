@@ -60,6 +60,7 @@ class ModbusBridge:
         self.running = False
         self.register_list = []  # [{device_id, address, function_code}, ...]
         self._poll_thread = None
+        self.stop_reason = None
 
         self.stats = {
             "published": 0,
@@ -98,6 +99,7 @@ class ModbusBridge:
                 self.subscribe_topic_tmpl, self._on_mqtt_write
             )
 
+            self.stop_reason = None
             self.running = True
             self.stats["started_at"] = datetime.now().isoformat()
 
@@ -130,14 +132,39 @@ class ModbusBridge:
     # Poll loop (Modbus → MQTT)
     # ----------------------------------------------------------------
     def _poll_loop(self):
+        consecutive_errors = 0
+        max_consecutive = 5
+
         while self.running:
             try:
-                self._do_poll()
+                success = self._do_poll()
+                if success:
+                    consecutive_errors = 0
+                else:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive:
+                        self.stop_reason = (
+                            f"{consecutive_errors} consecutive all-failed reads"
+                        )
+                        logger.warning(
+                            f"Modbus bridge: {self.stop_reason} — auto-stopping"
+                        )
+                        self.stop()
+                        return
             except Exception as e:
-                logger.warning(f"Modbus bridge poll cycle error: {e}")
+                consecutive_errors += 1
+                self.stats["errors"] += 1
+                if consecutive_errors >= max_consecutive:
+                    self.stop_reason = f"{consecutive_errors} consecutive exceptions"
+                    logger.warning(f"Modbus bridge: {self.stop_reason} — auto-stopping")
+                    self.stop()
+                    return
+                logger.warning(f"Modbus bridge poll error: {e}")
+
             time.sleep(self.poll_interval_s)
 
     def _do_poll(self):
+        had_success = False
         for reg in list(self.register_list):
             if not self.running:
                 break
@@ -154,6 +181,7 @@ class ModbusBridge:
                 if value is None:
                     continue  # device disconnected or breaker open — skip silently
 
+                had_success = True
                 topic = self.publish_topic_tmpl.replace(
                     "{dev_id}", str(device_id)
                 ).replace("{address}", str(address))
@@ -177,6 +205,7 @@ class ModbusBridge:
                 logger.warning(
                     f"Modbus bridge: error reading {device_id}:addr{address}: {e}"
                 )
+        return had_success
 
     def _read_register(self, device_id, address, fc):
         if fc == 3:
@@ -273,6 +302,7 @@ class ModbusBridge:
             "register_count": len(self.register_list),
             "registers": list(self.register_list),
             "stats": dict(self.stats),
+            "stop_reason": self.stop_reason,
         }
 
     def update_config(

@@ -204,6 +204,19 @@ def background_broadcast():
                     socketio.emit("system_metrics", m, namespace="/")
                 except Exception:
                     pass
+
+            # Phase 12 — emit CAN/Modbus status so the dashboard reflects
+            # disconnections and circuit-breaker trips without a refresh
+            try:
+                socketio.emit("can_status", can_manager.get_status(), namespace="/")
+            except Exception:
+                pass
+            try:
+                devices = modbus_manager.get_all_devices()
+                socketio.emit("modbus_devices", {"devices": devices}, namespace="/")
+            except Exception:
+                pass
+
             _ticks += 1
 
         except Exception as e:

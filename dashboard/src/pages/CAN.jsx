@@ -29,13 +29,20 @@ export default function CAN() {
     fetchStatus();
     const sock = getSocket();
     if (!sock) return;
+
+    const onStatus = (s) => setStatus(s);
+    sock.on("can_status", onStatus);
+
     sock.on("can_message", (msg) => {
       setMessages((prev) => [
         { ...msg, _ts: Date.now() },
         ...prev,
       ].slice(0, 200));
     });
-    return () => sock.off("can_message");
+    return () => {
+      sock.off("can_status", onStatus);
+      sock.off("can_message");
+    };
   }, []);
   const handleConnect = async () => {
     const r = await apiPost("/api/can/connect", { bitrate });

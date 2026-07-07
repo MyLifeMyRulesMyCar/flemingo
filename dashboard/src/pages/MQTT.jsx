@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { apiGet, apiPost } from "../api/client.js";
 import StatusLed from "../components/StatusLed.jsx";
@@ -13,6 +13,7 @@ export default function MQTT() {
   const [modRegs, setModRegs] = useState([]);
   const [modPoll, setModPoll] = useState(5);
   const [modNewDev, setModNewDev] = useState("");
+  const prevModbusRunning = useRef(null);
   const [modNewAddr, setModNewAddr] = useState(0);
   const [modNewFc, setModNewFc] = useState(3);
 
@@ -32,9 +33,20 @@ export default function MQTT() {
       const d = await r.json();
       setStatus(d);
       const mb = d.bridges?.modbus;
+      const wasRunning = prevModbusRunning.current;
+      const isRunning = mb?.running;
+      prevModbusRunning.current = isRunning;
+
       if (mb) {
         if (mb.registers?.length) setModRegs(mb.registers);
         if (mb.poll_interval_s) setModPoll(mb.poll_interval_s);
+      }
+
+      if (wasRunning && !isRunning && mb?.stop_reason) {
+        showToast(
+          `Modbus bridge auto-stopped: ${mb.stop_reason}`,
+          "error"
+        );
       }
       const cb = d.bridges?.can;
       if (cb) {
@@ -392,6 +404,15 @@ function ModbusBridgeCard({
             onClick={onStart} disabled={false}>{isRunning ? "Apply" : "Start"}</button>
           <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
             onClick={onStop} disabled={!isRunning}>Stop</button>
+        </div>
+      )}
+      {!isRunning && s.stop_reason && (
+        <div style={{
+          background: "#3a2a0a", border: "1px solid var(--status-warn)",
+          color: "var(--status-warn)", padding: "8px 12px", borderRadius: "var(--radius)",
+          fontSize: "12px", marginBottom: "12px",
+        }}>
+          Auto-stopped: {s.stop_reason}
         </div>
       )}
       <div className="form-row">

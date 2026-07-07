@@ -18,6 +18,7 @@
 import json
 import logging
 import threading
+import time
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ class CANBridge:
         self.qos = config.get("qos", 0)
 
         self.running = False
+        self.stop_reason = None
+        self._health_thread = None
         self.stats = {
             "published": 0,  # CAN → MQTT
             "received": 0,  # MQTT → CAN TX
@@ -76,7 +79,16 @@ class CANBridge:
             self._mqtt.register_subscription(self.subscribe_topic, self._on_mqtt_tx)
 
             self.running = True
+            self.stop_reason = None
             self.stats["started_at"] = datetime.now().isoformat()
+
+            self._health_thread = threading.Thread(
+                target=self._health_loop,
+                name="CAN-Bridge-Health",
+                daemon=True,
+            )
+            self._health_thread.start()
+
             logger.info(
                 f"CAN bridge started | "
                 f"publish={self.publish_topic} | "
@@ -90,7 +102,12 @@ class CANBridge:
             self._can.unsubscribe(self._on_can_rx)
             self._mqtt.deregister_subscription(self.subscribe_topic)
             self.running = False
-            logger.info("CAN bridge stopped")
+
+        if self._health_thread:
+            self._health_thread.join(timeout=8)
+            self._health_thread = None
+
+        logger.info("CAN bridge stopped")
 
     # ----------------------------------------------------------------
     # CAN → MQTT  (called from can_manager's RX thread)
@@ -115,6 +132,38 @@ class CANBridge:
         except Exception as e:
             self.stats["errors"] += 1
             logger.warning(f"CAN bridge publish error: {e}")
+
+    # ----------------------------------------------------------------
+    # Health check thread — auto-stops the bridge when CAN disconnects
+    # ----------------------------------------------------------------
+    def _health_loop(self):
+        interval = 5
+        max_consecutive = 3
+        # Grace period — don't check immediately after start
+        time.sleep(interval)
+
+        while self.running:
+            try:
+                status = self._can.get_status()
+                if not status.get("connected"):
+                    max_consecutive -= 1
+                    if max_consecutive <= 0:
+                        self.stop_reason = "CAN bus disconnected"
+                        logger.warning(
+                            f"CAN bridge: {self.stop_reason} — auto-stopping"
+                        )
+                        self.stop()
+                        return
+                else:
+                    max_consecutive = 3
+            except Exception:
+                max_consecutive -= 1
+                if max_consecutive <= 0:
+                    self.stop_reason = "CAN manager unresponsive"
+                    logger.warning(f"CAN bridge: {self.stop_reason} — auto-stopping")
+                    self.stop()
+                    return
+            time.sleep(interval)
 
     # ----------------------------------------------------------------
     # MQTT → CAN TX  (called from mqtt_manager's network thread)
@@ -167,6 +216,7 @@ class CANBridge:
             "subscribe_topic": self.subscribe_topic,
             "qos": self.qos,
             "stats": dict(self.stats),
+            "stop_reason": self.stop_reason,
         }
 
     def update_config(
