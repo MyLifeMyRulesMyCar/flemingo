@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { apiGet, apiPost } from "../api/client.js";
+import { getSocket } from "../api/socket.js";
 import StatusLed from "../components/StatusLed.jsx";
 import { useToast } from "../components/Toast.jsx";
 
@@ -14,8 +15,10 @@ export default function MQTT() {
   const [modPoll, setModPoll] = useState(5);
   const [modNewDev, setModNewDev] = useState("");
   const prevModbusRunning = useRef(null);
+  const prevCanRunning = useRef(null);
   const [modNewAddr, setModNewAddr] = useState(0);
   const [modNewFc, setModNewFc] = useState(3);
+  const [modbusDevices, setModbusDevices] = useState([]);
 
   const [canPubTopic, setCanPubTopic] = useState("flemingo/edge-01/can/rx");
   const [canSubTopic, setCanSubTopic] = useState("flemingo/edge-01/can/tx");
@@ -23,6 +26,7 @@ export default function MQTT() {
 
   const [ioPollMs, setIoPollMs] = useState(100);
   const [ioPublishOnChange, setIoPublishOnChange] = useState(false);
+  const [canConnected, setCanConnected] = useState(false);
 
   const isOperator = role === "operator" || role === "admin";
   const isAdmin = role === "admin";
@@ -38,7 +42,7 @@ export default function MQTT() {
       prevModbusRunning.current = isRunning;
 
       if (mb) {
-        if (mb.registers?.length) setModRegs(mb.registers);
+        if (mb.running && mb.registers?.length) setModRegs(mb.registers);
         if (mb.poll_interval_s) setModPoll(mb.poll_interval_s);
       }
 
@@ -49,10 +53,21 @@ export default function MQTT() {
         );
       }
       const cb = d.bridges?.can;
+      const wasCanRunning = prevCanRunning.current;
+      const isCanRunning = cb?.running;
+      prevCanRunning.current = isCanRunning;
+
       if (cb) {
         if (cb.publish_topic) setCanPubTopic(cb.publish_topic);
         if (cb.subscribe_topic) setCanSubTopic(cb.subscribe_topic);
         if (cb.qos !== undefined) setCanQos(cb.qos);
+      }
+
+      if (wasCanRunning && !isCanRunning && cb?.stop_reason) {
+        showToast(
+          `CAN bridge auto-stopped: ${cb.stop_reason}`,
+          "error"
+        );
       }
       const ib = d.bridges?.io;
       if (ib) {
@@ -66,6 +81,34 @@ export default function MQTT() {
     fetchStatus();
     const t = setInterval(fetchStatus, 3000);
     return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    const fetchDevices = () => {
+      apiGet("/api/modbus/devices")
+        .then((r) => r.json())
+        .then((d) => {
+          const connected = (d.devices || []).filter((dev) => dev.connected);
+          setModbusDevices(connected);
+        })
+        .catch(() => {});
+    };
+    fetchDevices();
+    const t = setInterval(fetchDevices, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    apiGet("/api/can/status")
+      .then((r) => r.json())
+      .then((d) => setCanConnected(d.connected === true))
+      .catch(() => {});
+
+    const sock = getSocket();
+    if (!sock) return;
+    const onStatus = (s) => setCanConnected(s.connected === true);
+    sock.on("can_status", onStatus);
+    return () => sock.off("can_status", onStatus);
   }, []);
 
   const handleConnect = async () => {
@@ -244,6 +287,7 @@ export default function MQTT() {
           pubTopic={canPubTopic}
           subTopic={canSubTopic}
           qos={canQos}
+          canConnected={canConnected}
           onPubTopicChange={setCanPubTopic}
           onSubTopicChange={setCanSubTopic}
           onQosChange={setCanQos}
@@ -257,6 +301,7 @@ export default function MQTT() {
         <ModbusBridgeCard
           status={bridges.modbus}
           registers={modRegs}
+          modbusDevices={modbusDevices}
           onAddRow={addModbusRow}
           onRemoveRow={removeModbusRow}
           onStart={startModbusBridge}
@@ -288,7 +333,7 @@ export default function MQTT() {
 }
 
 function CANBridgeCard({
-  status, pubTopic, subTopic, qos,
+  status, pubTopic, subTopic, qos, canConnected,
   onPubTopicChange, onSubTopicChange, onQosChange,
   onStart, onStop, onConfig,
   isOperator, isAdmin,
@@ -304,7 +349,7 @@ function CANBridgeCard({
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
           <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart} disabled={s.running}>Start</button>
+            onClick={onStart} disabled={s.running || !canConnected}>Start</button>
           <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
             onClick={onStop} disabled={!s.running}>Stop</button>
         </div>
@@ -330,6 +375,15 @@ function CANBridgeCard({
       {isAdmin && (
         <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px", marginBottom: "12px" }}
           onClick={onConfig} disabled={s.running}>Apply Config</button>
+      )}
+      {!s.running && s.stop_reason && (
+        <div style={{
+          background: "#3a2a0a", border: "1px solid var(--status-warn)",
+          color: "var(--status-warn)", padding: "8px 12px", borderRadius: "var(--radius)",
+          fontSize: "12px", marginBottom: "12px",
+        }}>
+          Auto-stopped: {s.stop_reason}
+        </div>
       )}
       <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
         <div>Published: {st.published ?? 0}</div>
@@ -385,7 +439,7 @@ function IOBridgeCard({
 }
 
 function ModbusBridgeCard({
-  status, registers, pollInterval,
+  status, registers, pollInterval, modbusDevices,
   onAddRow, onRemoveRow, onStart, onStop, isOperator,
   newDev, onNewDevChange, newAddr, onNewAddrChange, newFc, onNewFcChange, onPollChange,
 }) {
@@ -421,6 +475,29 @@ function ModbusBridgeCard({
           style={{ width: 80 }} min={1} max={3600} disabled={!isOperator || isRunning} />
       </div>
       <div className="form-row"><label>Registers ({registers.length})</label></div>
+
+      {modbusDevices && modbusDevices.length > 0 && (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+          {modbusDevices.map((d) => (
+            <span
+              key={d.id}
+              onClick={() => isOperator && onNewDevChange(d.id)}
+              title={`${d.name} (${d.port}, slave ${d.slave_id})`}
+              style={{
+                background: isOperator ? "#1a2733" : "#1c2128",
+                color: "var(--accent)",
+                padding: "2px 10px",
+                borderRadius: "10px",
+                fontSize: "11px",
+                cursor: isOperator ? "pointer" : "default",
+              }}
+            >
+              {d.name}
+            </span>
+          ))}
+        </div>
+      )}
+
       <table className="data-table" style={{ marginBottom: "10px" }}>
         <thead><tr><th>Device ID</th><th>Address</th><th>FC</th><th></th></tr></thead>
         <tbody>
@@ -428,7 +505,7 @@ function ModbusBridgeCard({
             <tr key={idx}>
               <td style={{ fontFamily: "var(--font-sans)" }}>{reg.device_id}</td>
               <td>{reg.address}</td><td>FC{reg.function_code}</td>
-              <td>{isOperator && <button className="btn-danger" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => onRemoveRow(idx)}>Del</button>}</td>
+              <td>{isOperator && <button className="btn-danger" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => onRemoveRow(idx)} disabled={isRunning || false}>Del</button>}</td>
             </tr>
           ))}
           {registers.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "var(--text-muted)" }}>No registers configured</td></tr>}
@@ -436,10 +513,20 @@ function ModbusBridgeCard({
       </table>
       {isOperator && (
         <div className="form-inline" style={{ marginBottom: "8px" }}>
-          <div className="form-row"><label>Device</label><input placeholder="dev1" value={newDev} onChange={(e) => onNewDevChange(e.target.value)} style={{ width: 100 }} /></div>
-          <div className="form-row"><label>Addr</label><input type="number" value={newAddr} onChange={(e) => onNewAddrChange(Number(e.target.value))} style={{ width: 70 }} min={0} max={65535} /></div>
+          <div className="form-row">
+            <label>Device</label>
+            <select value={newDev} onChange={(e) => onNewDevChange(e.target.value)} style={{ width: 150 }}>
+              <option value="">Select device...</option>
+              {(modbusDevices || []).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.id})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-row"><label>Addr</label><input type="number" value={newAddr} onChange={(e) => onNewAddrChange(Number(e.target.value))} style={{ width: 70 }} min={0} max={65535} disabled={isRunning || false} /></div>
           <div className="form-row"><label>FC</label><select value={newFc} onChange={(e) => onNewFcChange(Number(e.target.value))}><option value={1}>FC1</option><option value={2}>FC2</option><option value={3}>FC3</option><option value={4}>FC4</option></select></div>
-          <button className="btn-primary" style={{ padding: "8px 14px", fontSize: "12px" }} onClick={onAddRow}>Add</button>
+          <button className="btn-primary" style={{ padding: "8px 14px", fontSize: "12px" }} onClick={onAddRow} disabled={isRunning || false}>Add</button>
         </div>
       )}
       <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
