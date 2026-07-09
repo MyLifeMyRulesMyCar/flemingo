@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-07-06
+### Added
+- Watchdog exit-on-timeout: `os._exit(1)` on hung loop so systemd `Restart=on-failure` recovers
+- Gunicorn + eventlet production WSGI server (`thread=False` preserves CAN/GPIO threads)
+- `StartLimitIntervalSec`/`StartLimitBurst` to prevent infinite restart loops on broken builds
+### Changed
+- `ExecStart` in systemd unit: `python3 api/app.py` → `gunicorn --worker-class eventlet --workers 1`
+- `SocketIO(async_mode="threading")` → `async_mode="eventlet"`
+- `_start_runtime()` extracted from `__main__` for gunicorn import-time daemon startup
+
+## [0.12.0] - 2026-07-05
 ### Added
 - CI pipeline (lint, pytest, dashboard build) via GitHub Actions
 - Pinned all Python and Node dependencies to exact versions
@@ -14,6 +25,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - systemd `flemingo.service` template
 - `docs/DEPLOYMENT.md` with v0 update procedure and v1 roadmap
 - `README.md` with quick-start guide
+- `CHANGELOG.md` with backfilled history from 0.5.0
 
 ## [0.11.0] - 2026-07-05
 
