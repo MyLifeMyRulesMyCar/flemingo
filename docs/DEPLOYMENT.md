@@ -76,6 +76,28 @@ systemd treats it as the main process. On stop/restart the existing signal
 handler performs a graceful shutdown (daemon stop, CAN/Modbus disconnect,
 MQTT bridge shutdown).
 
+## Production WSGI server (eventlet + gunicorn)
+
+The systemd service runs under gunicorn with a single eventlet worker.
+Eventlet monkey-patches the networking layer (socket, select, time) for
+cooperative I/O while leaving real OS threads alone (`thread=False`) —
+this is critical because the CAN RX thread and GPIO daemon poll loop make
+blocking C-extension calls (SPI transfers, GPIO reads) that would stall
+the eventlet hub if running on greenthreads.
+
+**Fallback if eventlet stalls during sustained CAN bus bursts** (rare,
+but possible if SPI transfers saturate the hub): edit the systemd unit's
+`ExecStart` line to use gthread instead:
+
+```
+ExecStart=__VENV_DIR__/bin/gunicorn --worker-class gthread --workers 1 --threads 8 --bind 0.0.0.0:5000 --timeout 120 api.app:app
+```
+
+Gthread uses a single process with a thread pool — no cooperative
+scheduling, so blocking SPI calls are fine. The trade-off is higher
+per-connection memory (one thread per WebSocket client) vs. eventlet's
+lightweight greenthreads.
+
 ## Roadmap — v1 deployment story
 
 The current v0 model uses in-place `git checkout` for updates. This works during

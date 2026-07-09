@@ -24,6 +24,18 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Phase 13 — production WSGI: eventlet monkey-patch for gunicorn.
+# thread=False preserves real OS threads for CAN RX / daemon GPIO.
+# os=False avoids patching os.fork (incompatible with some libs).
+# Disable entirely with FLEMINGO_EVENTLET=0 env var for debugging.
+if os.getenv("FLEMINGO_EVENTLET", "1") != "0":
+    try:
+        import eventlet
+
+        eventlet.monkey_patch(thread=False, os=False)
+    except ImportError:
+        pass  # eventlet not installed — fine for dev / pytest
+
 from core.logging_config import setup_logging
 
 setup_logging()
@@ -86,7 +98,7 @@ else:
     _cors_origins = _security_cfg.get("cors_origins", ["*"])
 
 CORS(app, resources={r"/*": {"origins": _cors_origins}})
-socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode="eventlet")
 
 # ============================================
 # Hardware managers
@@ -283,12 +295,30 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
+
 # ============================================
-# Main
+# Runtime startup — called by both gunicorn and local dev
 # ============================================
-if __name__ == "__main__":
-    daemon.start()
-    start_background_thread()
+def _start_runtime():
+    """Start the daemon and broadcast threads. Idempotent — safe to call
+    multiple times. Skipped when FLEMINGO_SKIP_AUTOSTART is set so pytest
+    imports don't spin up hardware threads."""
+    if os.getenv("FLEMINGO_SKIP_AUTOSTART"):
+        return
+    try:
+        daemon.start()
+        start_background_thread()
+    except Exception as e:
+        logger.warning(f"_start_runtime: {e}")
+
+
+# ============================================
+# Main — two paths: gunicorn import vs python3 api/app.py
+# ============================================
+if __name__ != "__main__":
+    _start_runtime()
+elif __name__ == "__main__":
+    _start_runtime()
 
     HOST = os.getenv("PURPLEIO_HOST", "0.0.0.0")
     PORT = int(os.getenv("PURPLEIO_PORT", "5000"))
@@ -299,4 +329,11 @@ if __name__ == "__main__":
     print("   Roles:     viewer < operator < admin")
     print("=" * 60)
 
-    socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
+    # Dev-only: Werkzeug built-in server. Production uses gunicorn via
+    # the systemd unit (see deploy/flemingo.service.template).
+    try:
+        import eventlet
+
+        eventlet.wsgi.server(eventlet.listen((HOST, PORT)), app)
+    except ImportError:
+        socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
