@@ -74,3 +74,8 @@ security:
   #   PURPLEIO_CORS_ORIGINS="http://192.168.1.50:3000" python3 api/app.py
   cors_origins:
     - "*"
+  # Login rate limiting — max failed attempts per (IP, username) pair
+  # in a sliding time window. Exceed this and get 429 until the window
+  # expires. Success clears the counter.
+  login_max_attempts: 5
+  login_window_minutes: 15

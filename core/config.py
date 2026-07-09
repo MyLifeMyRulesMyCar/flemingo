@@ -44,6 +44,10 @@ DEFAULTS = {
         "max_bytes": 5242880,
         "backup_count": 5,
     },
+    "security": {
+        "login_max_attempts": 5,
+        "login_window_minutes": 15,
+    },
 }
 
 _cache = None

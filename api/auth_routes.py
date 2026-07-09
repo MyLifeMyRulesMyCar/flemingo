@@ -24,6 +24,8 @@ from core.auth_manager import (
     UserNotFoundError,
     VALID_ROLES,
 )
+from core.config import load_reliability_config
+from core.rate_limiter import LoginRateLimiter
 from api.auth_decorators import (
     require_auth,
     require_role,
@@ -42,6 +44,20 @@ def _get_auth_manager():
     return mgr
 
 
+_rate_limiter = None
+
+
+def _get_rate_limiter():
+    global _rate_limiter
+    if _rate_limiter is None:
+        cfg = load_reliability_config().get("security", {})
+        _rate_limiter = LoginRateLimiter(
+            max_attempts=cfg.get("login_max_attempts", 5),
+            window_minutes=cfg.get("login_window_minutes", 15),
+        )
+    return _rate_limiter
+
+
 # -------------------------------------------------------
 # POST /api/auth/login
 # Public - no decorator needed.
@@ -57,12 +73,20 @@ def login():
     if not username or not password:
         return jsonify({"error": "username and password are required"}), 400
 
+    key = f"{request.remote_addr}:{username}"
+    limiter = _get_rate_limiter()
+    if limiter.check(key) >= limiter.max_attempts:
+        return jsonify({"error": "Too many failed attempts, try again later"}), 429
+
     mgr = _get_auth_manager()
     try:
         user = mgr.authenticate(username, password)
     except InvalidCredentialsError:
+        limiter.record_failure(key)
         # No info about which field was wrong - same error either way
         return jsonify({"error": "Invalid credentials"}), 401
+
+    limiter.record_success(key)
 
     access_token = mgr.issue_access_token(user)
     refresh_token = mgr.issue_refresh_token(user)
