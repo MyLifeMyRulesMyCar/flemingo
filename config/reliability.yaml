@@ -30,6 +30,10 @@ watchdog:
   # How often (seconds) the watchdog re-runs the registered component
   # health checks (GPIO/CAN/Modbus), independent of the feed timeout.
   check_interval: 10
+  # When true, the watchdog calls os._exit(1) on timeout so systemd's
+  # Restart=on-failure restarts the whole process. Set to false if you
+  # want to keep the process alive for debugging a hung loop.
+  exit_on_timeout: true
 
 logging:
   level: INFO

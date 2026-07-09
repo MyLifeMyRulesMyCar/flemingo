@@ -86,3 +86,16 @@ def test_component_health_check_exception_is_caught():
     assert (
         wd.components["flaky"]["status"] == "error"
     ), "component status reflects the error"
+
+
+def test_exit_process_timeout_handler_calls_os_exit():
+    from core.watchdog import exit_process_timeout_handler
+    from unittest.mock import patch
+
+    wd = WatchdogTimer(timeout=1, check_interval=10)
+    wd.feed()  # initial feed so last_feed is set
+
+    with patch("os._exit") as mock_exit:
+        exit_process_timeout_handler(wd)
+
+    mock_exit.assert_called_once_with(1)

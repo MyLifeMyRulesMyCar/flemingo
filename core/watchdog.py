@@ -15,6 +15,7 @@
 # that's where those references naturally live.
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -198,3 +199,14 @@ class WatchdogTimer:
         if self.thread:
             self.thread.join(timeout=5)
         logger.info("Watchdog stopped")
+
+
+def exit_process_timeout_handler(watchdog_self):
+    """Called when the watchdog detects a hung main loop.
+    Logs diagnostics then terminates the entire process so systemd's
+    Restart=on-failure can restart it. Uses os._exit (not sys.exit)
+    because this runs on the watchdog's background thread — sys.exit
+    would only raise SystemExit in that thread, not stop the process."""
+    watchdog_self._default_timeout_handler()
+    logger.critical("Watchdog: terminating process — systemd will restart")
+    os._exit(1)

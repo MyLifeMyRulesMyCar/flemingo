@@ -23,7 +23,7 @@ import time
 import traceback
 
 from core.state import state
-from core.watchdog import WatchdogTimer
+from core.watchdog import WatchdogTimer, exit_process_timeout_handler
 from core.config import load_reliability_config
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,11 @@ class PurpleIODaemon:
         self.watchdog = WatchdogTimer(
             timeout=wd_config["timeout"],
             check_interval=wd_config["check_interval"],
+            on_timeout=(
+                exit_process_timeout_handler
+                if wd_config.get("exit_on_timeout", True)
+                else None
+            ),
         )
         self.watchdog.register_component("gpio", self._check_gpio_health)
         if self.can_manager is not None:

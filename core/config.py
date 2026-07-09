@@ -36,6 +36,7 @@ DEFAULTS = {
     "watchdog": {
         "timeout": 30,
         "check_interval": 10,
+        "exit_on_timeout": True,
     },
     "logging": {
         "level": "INFO",
