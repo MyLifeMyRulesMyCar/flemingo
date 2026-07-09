@@ -9,7 +9,16 @@ export default function MQTT() {
   const { role } = useAuth();
   const { showToast } = useToast();
   const [status, setStatus] = useState({});
-  const [broker, setBroker] = useState({ host: "", port: 1883, username: "", password: "" });
+  const storedHost = sessionStorage.getItem("mqtt_host") || "";
+  const storedPort = sessionStorage.getItem("mqtt_port") || "1883";
+  const storedUser = sessionStorage.getItem("mqtt_user") || "";
+  const storedPass = sessionStorage.getItem("mqtt_pass") || "";
+  const [broker, setBroker] = useState({
+    host: storedHost,
+    port: parseInt(storedPort) || 1883,
+    username: storedUser,
+    password: storedPass,
+  });
 
   const [modRegs, setModRegs] = useState([]);
   const [modPoll, setModPoll] = useState(5);
@@ -222,7 +231,10 @@ export default function MQTT() {
             <input
               placeholder="192.168.1.x"
               value={broker.host}
-              onChange={(e) => setBroker({ ...broker, host: e.target.value })}
+              onChange={(e) => {
+                sessionStorage.setItem("mqtt_host", e.target.value);
+                setBroker({ ...broker, host: e.target.value });
+              }}
               disabled={!isOperator}
             />
           </div>
@@ -231,7 +243,10 @@ export default function MQTT() {
             <input
               type="number"
               value={broker.port}
-              onChange={(e) => setBroker({ ...broker, port: e.target.value })}
+              onChange={(e) => {
+                sessionStorage.setItem("mqtt_port", e.target.value);
+                setBroker({ ...broker, port: e.target.value });
+              }}
               style={{ width: 80 }}
               disabled={!isOperator}
             />
@@ -241,7 +256,10 @@ export default function MQTT() {
             <input
               placeholder="(none)"
               value={broker.username}
-              onChange={(e) => setBroker({ ...broker, username: e.target.value })}
+              onChange={(e) => {
+                sessionStorage.setItem("mqtt_user", e.target.value);
+                setBroker({ ...broker, username: e.target.value });
+              }}
               style={{ width: 120 }}
               disabled={!isOperator}
             />
@@ -252,17 +270,20 @@ export default function MQTT() {
               type="password"
               placeholder="(none)"
               value={broker.password}
-              onChange={(e) => setBroker({ ...broker, password: e.target.value })}
+              onChange={(e) => {
+                sessionStorage.setItem("mqtt_pass", e.target.value);
+                setBroker({ ...broker, password: e.target.value });
+              }}
               style={{ width: 120 }}
               disabled={!isOperator}
             />
           </div>
           {isOperator && (
             <>
-              <button className="btn-primary" onClick={handleConnect}>
+              <button className="btn-primary" onClick={handleConnect} disabled={status.connected}>
                 Connect
               </button>
-              <button className="btn-default" onClick={handleDisconnect}>
+              <button className="btn-default" onClick={handleDisconnect} disabled={!status.connected}>
                 Disconnect
               </button>
             </>
@@ -284,6 +305,7 @@ export default function MQTT() {
       <div className="bridge-grid">
         <CANBridgeCard
           status={bridges.can}
+          brokerConnected={status.connected}
           pubTopic={canPubTopic}
           subTopic={canSubTopic}
           qos={canQos}
@@ -300,6 +322,7 @@ export default function MQTT() {
 
         <ModbusBridgeCard
           status={bridges.modbus}
+          brokerConnected={status.connected}
           registers={modRegs}
           modbusDevices={modbusDevices}
           onAddRow={addModbusRow}
@@ -319,6 +342,7 @@ export default function MQTT() {
 
         <IOBridgeCard
           status={bridges.io}
+          brokerConnected={status.connected}
           pollMs={ioPollMs}
           publishOnChange={ioPublishOnChange}
           onPollMsChange={setIoPollMs}
@@ -333,7 +357,7 @@ export default function MQTT() {
 }
 
 function CANBridgeCard({
-  status, pubTopic, subTopic, qos, canConnected,
+  status, pubTopic, subTopic, qos, canConnected, brokerConnected,
   onPubTopicChange, onSubTopicChange, onQosChange,
   onStart, onStop, onConfig,
   isOperator, isAdmin,
@@ -349,7 +373,7 @@ function CANBridgeCard({
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
           <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart} disabled={s.running || !canConnected}>Start</button>
+            onClick={onStart} disabled={s.running || !canConnected || !brokerConnected}>Start</button>
           <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
             onClick={onStop} disabled={!s.running}>Stop</button>
         </div>
@@ -395,7 +419,7 @@ function CANBridgeCard({
 }
 
 function IOBridgeCard({
-  status, pollMs, publishOnChange,
+  status, pollMs, publishOnChange, brokerConnected,
   onPollMsChange, onPublishOnChangeChange,
   onStart, onStop, isOperator,
 }) {
@@ -410,7 +434,7 @@ function IOBridgeCard({
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
           <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart} disabled={s.running}>Start</button>
+            onClick={onStart} disabled={s.running || !brokerConnected}>Start</button>
           <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
             onClick={onStop} disabled={!s.running}>Stop</button>
         </div>
@@ -439,7 +463,7 @@ function IOBridgeCard({
 }
 
 function ModbusBridgeCard({
-  status, registers, pollInterval, modbusDevices,
+  status, registers, pollInterval, modbusDevices, brokerConnected,
   onAddRow, onRemoveRow, onStart, onStop, isOperator,
   newDev, onNewDevChange, newAddr, onNewAddrChange, newFc, onNewFcChange, onPollChange,
 }) {
@@ -455,7 +479,7 @@ function ModbusBridgeCard({
       {isOperator && (
         <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
           <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
-            onClick={onStart} disabled={false}>{isRunning ? "Apply" : "Start"}</button>
+            onClick={onStart} disabled={!brokerConnected || registers.length === 0}>{isRunning ? "Apply" : "Start"}</button>
           <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px" }}
             onClick={onStop} disabled={!isRunning}>Stop</button>
         </div>
@@ -467,6 +491,11 @@ function ModbusBridgeCard({
           fontSize: "12px", marginBottom: "12px",
         }}>
           Auto-stopped: {s.stop_reason}
+        </div>
+      )}
+      {brokerConnected && registers.length === 0 && (
+        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginBottom: "12px" }}>
+          Add at least one register below to enable Start
         </div>
       )}
       <div className="form-row">
