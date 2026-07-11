@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-11
+### Changed
+- Refined deployment and service startup behavior for production environments.
+- Improved runtime reliability around IO bridging, Modbus handling, and watchdog monitoring.
+- Updated deployment documentation and monitoring tooling for ongoing validation.
+
 ## [0.13.0] - 2026-07-06
 ### Added
 - Watchdog exit-on-timeout: `os._exit(1)` on hung loop so systemd `Restart=on-failure` recovers
