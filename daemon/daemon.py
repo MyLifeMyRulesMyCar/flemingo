@@ -64,12 +64,11 @@ class PurpleIODaemon:
         self.watchdog = WatchdogTimer(
             timeout=wd_config["timeout"],
             check_interval=wd_config["check_interval"],
-            on_timeout=(
-                exit_process_timeout_handler
-                if wd_config.get("exit_on_timeout", True)
-                else None
-            ),
         )
+        if wd_config.get("exit_on_timeout", True):
+            self.watchdog.on_timeout = lambda: exit_process_timeout_handler(
+                self.watchdog
+            )
         self.watchdog.register_component("gpio", self._check_gpio_health)
         if self.can_manager is not None:
             self.watchdog.register_component("can", self._check_can_health)

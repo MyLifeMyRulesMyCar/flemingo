@@ -24,18 +24,6 @@ import logging
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Phase 13 — production WSGI: eventlet monkey-patch for gunicorn.
-# thread=False preserves real OS threads for CAN RX / daemon GPIO.
-# os=False avoids patching os.fork (incompatible with some libs).
-# Disable entirely with FLEMINGO_EVENTLET=0 env var for debugging.
-if os.getenv("FLEMINGO_EVENTLET", "1") != "0":
-    try:
-        import eventlet
-
-        eventlet.monkey_patch(thread=False, os=False)
-    except ImportError:
-        pass  # eventlet not installed — fine for dev / pytest
-
 from core.logging_config import setup_logging
 
 setup_logging()
@@ -98,7 +86,7 @@ else:
     _cors_origins = _security_cfg.get("cors_origins", ["*"])
 
 CORS(app, resources={r"/*": {"origins": _cors_origins}})
-socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode="eventlet")
+socketio = SocketIO(app, cors_allowed_origins=_cors_origins, async_mode="threading")
 
 # ============================================
 # Hardware managers
@@ -330,10 +318,5 @@ elif __name__ == "__main__":
     print("=" * 60)
 
     # Dev-only: Werkzeug built-in server. Production uses gunicorn via
-    # the systemd unit (see deploy/flemingo.service.template).
-    try:
-        import eventlet
-
-        eventlet.wsgi.server(eventlet.listen((HOST, PORT)), app)
-    except ImportError:
-        socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)
+    # the systemd unit (deploy/flemingo.service.template).
+    socketio.run(app, host=HOST, port=PORT, debug=False, allow_unsafe_werkzeug=True)

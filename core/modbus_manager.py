@@ -384,7 +384,8 @@ class ModbusManager:
 
         @device.breaker.call
         def _attempt():
-            return func()
+            with self._lock:
+                return func()
 
         try:
             result = _attempt()

@@ -93,9 +93,31 @@ def test_exit_process_timeout_handler_calls_os_exit():
     from unittest.mock import patch
 
     wd = WatchdogTimer(timeout=1, check_interval=10)
-    wd.feed()  # initial feed so last_feed is set
+    wd.feed()
 
     with patch("os._exit") as mock_exit:
         exit_process_timeout_handler(wd)
 
     mock_exit.assert_called_once_with(1)
+
+
+def test_watchdog_timeout_triggers_exit_through_loop():
+    """Verify the full path: _watchdog_loop detects timeout → calls
+    on_timeout → exit handler fires. The previous test only tested
+    the handler in isolation and could not catch the signature
+    mismatch bug where self.on_timeout() was called with zero args."""
+    from core.watchdog import exit_process_timeout_handler
+    from unittest.mock import patch
+    import time
+
+    wd = WatchdogTimer(timeout=1, check_interval=10)
+    wd.on_timeout = lambda: exit_process_timeout_handler(wd)
+    wd.feed()
+    wd.start()
+
+    with patch("os._exit") as mock_exit:
+        time.sleep(3)
+        wd.stop()
+
+    mock_exit.assert_any_call(1)
+    assert mock_exit.call_count >= 1, "os._exit should be called at least once"

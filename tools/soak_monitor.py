@@ -27,6 +27,8 @@ import requests
 BASE = os.getenv("SOAK_BASE_URL", "http://127.0.0.1:5000")
 INTERVAL = int(os.getenv("SOAK_INTERVAL", "60"))
 TOKEN = os.getenv("SOAK_TOKEN", "")
+REFRESH_TOKEN = os.getenv("SOAK_REFRESH_TOKEN", "")
+_last_token_refresh = time.time()
 
 HEADER_CSV = [
     "timestamp",
@@ -62,10 +64,34 @@ def log(msg):
     sys.stderr.flush()
 
 
+def maybe_refresh_token():
+    global TOKEN, _last_token_refresh
+    if not REFRESH_TOKEN:
+        return
+    elapsed = time.time() - _last_token_refresh
+    if elapsed < 1500:  # 25 minutes
+        return
+    try:
+        resp = requests.post(
+            f"{BASE}/api/auth/refresh",
+            json={"refresh_token": REFRESH_TOKEN},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            TOKEN = resp.json().get("access_token", "")
+            _last_token_refresh = time.time()
+            log("token refreshed")
+        else:
+            log(f"token refresh failed: {resp.status_code}")
+    except requests.RequestException as e:
+        log(f"token refresh error: {e}")
+
+
 log("soak_monitor started")
 log(f"  base={BASE}  interval={INTERVAL}s  token={'yes' if TOKEN else 'no'}")
 
 while True:
+    maybe_refresh_token()
     row = {
         "timestamp": datetime.now().isoformat(),
         "rss_mb": "",

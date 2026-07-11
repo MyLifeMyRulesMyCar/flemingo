@@ -52,14 +52,19 @@ class IOBridge:
         self.subscribe_topic_do = config.get(
             "subscribe_topic_do", "flemingo/edge-01/io/do/+/set"
         )
+        self.publish_topic_do = config.get(
+            "publish_topic_do", "flemingo/edge-01/io/do/{channel}"
+        )
         self.qos = config.get("qos", 1)
 
         self.running = False
         self._poll_thread = None
         self._last_di = [None] * _DI_CHANNELS
+        self._last_do = [None] * _DO_CHANNELS
 
         self.stats = {
             "di_published": 0,
+            "do_published": 0,
             "do_received": 0,
             "errors": 0,
             "started_at": None,
@@ -91,6 +96,8 @@ class IOBridge:
             )
 
             self.running = True
+            self._last_di = [None] * _DI_CHANNELS
+            self._last_do = [None] * _DO_CHANNELS
             self.stats["started_at"] = datetime.now().isoformat()
 
             self._poll_thread = threading.Thread(
@@ -159,6 +166,31 @@ class IOBridge:
 
             self._last_di[ch] = val
 
+        try:
+            current_do = self._state.get_do()
+        except Exception:
+            current_do = []
+
+        for ch in range(min(len(current_do), _DO_CHANNELS)):
+            val = int(current_do[ch])
+
+            if self.publish_on_change and self._last_do[ch] == val:
+                continue
+
+            topic = self.publish_topic_do.replace("{channel}", str(ch))
+            payload = {
+                "value": val,
+                "channel": ch,
+                "name": f"DO{ch}",
+                "timestamp": now,
+            }
+            ok = self._mqtt.publish(topic, payload, qos=self.qos)
+            if ok:
+                self.stats["do_published"] += 1
+                logger.debug(f"IO bridge DO{ch}={val} → {topic}")
+
+            self._last_do[ch] = val
+
     # ----------------------------------------------------------------
     # MQTT → DO write
     # ----------------------------------------------------------------
@@ -202,14 +234,17 @@ class IOBridge:
     # ----------------------------------------------------------------
     def get_status(self) -> dict:
         last_di = list(self._last_di)
+        last_do = list(self._last_do)
         return {
             "running": self.running,
             "poll_interval_ms": self.poll_interval_ms,
             "publish_on_change": self.publish_on_change,
             "publish_topic_di": self.publish_topic_di,
+            "publish_topic_do": self.publish_topic_do,
             "subscribe_topic_do": self.subscribe_topic_do,
             "qos": self.qos,
             "last_di": last_di,
+            "last_do": last_do,
             "stats": dict(self.stats),
         }
 

@@ -454,7 +454,7 @@ function IOBridgeCard({
         </div>
       </div>
       <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-        <div>Published: {st.di_published ?? 0}</div>
+        <div>Published: {(st.di_published ?? 0) + (st.do_published ?? 0)}</div>
         <div>Received: {st.do_received ?? 0}</div>
         <div>Errors: {st.errors ?? 0}</div>
       </div>
