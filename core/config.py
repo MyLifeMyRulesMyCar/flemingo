@@ -122,6 +122,7 @@ _MQTT_DEFAULTS = {
             "publish_topic": "{prefix}/{device_id}/can/rx",
             "subscribe_topic": "{prefix}/{device_id}/can/tx",
             "qos": 0,
+            "id_filter": [],
         },
         "modbus": {
             "poll_interval_s": 5,

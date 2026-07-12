@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-07-12
+### Changed
+- Added MQTT/CAN bridge refinements for local broker traffic and runtime stability.
+- Updated CAN and MQTT-related configuration handling for improved publish behavior.
+- Included a hardware-oriented CAN concurrency test utility for validation.
+
 ## [0.13.1] - 2026-07-11
 ### Changed
 - Refined deployment and service startup behavior for production environments.

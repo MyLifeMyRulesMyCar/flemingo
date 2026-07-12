@@ -32,6 +32,7 @@ export default function MQTT() {
   const [canPubTopic, setCanPubTopic] = useState("flemingo/edge-01/can/rx");
   const [canSubTopic, setCanSubTopic] = useState("flemingo/edge-01/can/tx");
   const [canQos, setCanQos] = useState(0);
+  const [idFilter, setIdFilter] = useState("");
 
   const [ioPollMs, setIoPollMs] = useState(100);
   const [ioPublishOnChange, setIoPublishOnChange] = useState(false);
@@ -70,6 +71,7 @@ export default function MQTT() {
         if (cb.publish_topic) setCanPubTopic(cb.publish_topic);
         if (cb.subscribe_topic) setCanSubTopic(cb.subscribe_topic);
         if (cb.qos !== undefined) setCanQos(cb.qos);
+        if (cb.running && cb.id_filter && cb.id_filter.length > 0) setIdFilter(cb.id_filter.join(", "));
       }
 
       if (wasCanRunning && !isCanRunning && cb?.stop_reason) {
@@ -197,10 +199,16 @@ export default function MQTT() {
   };
 
   const updateCANConfig = async () => {
+    const ids = idFilter
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => parseInt(s, 0));
     const r = await apiPost("/api/mqtt/bridges/can/config", {
       publish_topic: canPubTopic,
       subscribe_topic: canSubTopic,
       qos: canQos,
+      id_filter: ids,
     });
     if (r.ok) showToast("CAN config updated", "success");
     else showToast((await r.json()).error || "Failed", "error");
@@ -309,10 +317,12 @@ export default function MQTT() {
           pubTopic={canPubTopic}
           subTopic={canSubTopic}
           qos={canQos}
+          idFilter={idFilter}
           canConnected={canConnected}
           onPubTopicChange={setCanPubTopic}
           onSubTopicChange={setCanSubTopic}
           onQosChange={setCanQos}
+          onIdFilterChange={setIdFilter}
           onStart={() => bridgeOp("/api/mqtt/bridges/can/start")}
           onStop={() => bridgeOp("/api/mqtt/bridges/can/stop")}
           onConfig={updateCANConfig}
@@ -357,8 +367,8 @@ export default function MQTT() {
 }
 
 function CANBridgeCard({
-  status, pubTopic, subTopic, qos, canConnected, brokerConnected,
-  onPubTopicChange, onSubTopicChange, onQosChange,
+  status, pubTopic, subTopic, qos, canConnected, brokerConnected, idFilter,
+  onPubTopicChange, onSubTopicChange, onQosChange, onIdFilterChange,
   onStart, onStop, onConfig,
   isOperator, isAdmin,
 }) {
@@ -395,6 +405,13 @@ function CANBridgeCard({
           <option value={1}>1 — At least once</option>
           <option value={2}>2 — Exactly once</option>
         </select>
+      </div>
+      <div className="form-row">
+        <label>ID Filter (comma-separated hex, empty = all)</label>
+        <input value={idFilter} onChange={(e) => onIdFilterChange(e.target.value)}
+          placeholder="e.g. 0x100, 0x200"
+          disabled={!isAdmin || s.running}
+          style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }} />
       </div>
       {isAdmin && (
         <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px", marginBottom: "12px" }}

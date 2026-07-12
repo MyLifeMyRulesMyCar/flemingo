@@ -44,6 +44,7 @@ class CANBridge:
         self.publish_topic = config.get("publish_topic", "flemingo/edge-01/can/rx")
         self.subscribe_topic = config.get("subscribe_topic", "flemingo/edge-01/can/tx")
         self.qos = config.get("qos", 0)
+        self.id_filter = set(config.get("id_filter") or [])
 
         self.running = False
         self.stop_reason = None
@@ -119,6 +120,8 @@ class CANBridge:
           {"can_id":..., "data":..., "dlc":..., "extended":..., "timestamp":...}
         """
         try:
+            if self.id_filter and entry.get("can_id") not in self.id_filter:
+                return
             payload = {
                 "can_id": entry.get("can_id"),
                 "data": entry.get("data", []),
@@ -215,12 +218,17 @@ class CANBridge:
             "publish_topic": self.publish_topic,
             "subscribe_topic": self.subscribe_topic,
             "qos": self.qos,
+            "id_filter": list(self.id_filter),
             "stats": dict(self.stats),
             "stop_reason": self.stop_reason,
         }
 
     def update_config(
-        self, publish_topic: str = None, subscribe_topic: str = None, qos: int = None
+        self,
+        publish_topic: str = None,
+        subscribe_topic: str = None,
+        qos: int = None,
+        id_filter: list = None,
     ):
         """Update topic config. Bridge must be stopped before calling this."""
         if self.running:
@@ -231,3 +239,5 @@ class CANBridge:
             self.subscribe_topic = subscribe_topic
         if qos is not None:
             self.qos = qos
+        if id_filter is not None:
+            self.id_filter = set(id_filter)

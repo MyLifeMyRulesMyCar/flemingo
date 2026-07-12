@@ -196,6 +196,10 @@ def config_can_bridge():
             kwargs["subscribe_topic"] = validate_mqtt_topic(data["subscribe_topic"])
         if "qos" in data:
             kwargs["qos"] = validate_mqtt_qos(data["qos"])
+        if "id_filter" in data:
+            f = data["id_filter"]
+            if isinstance(f, list):
+                kwargs["id_filter"] = [int(v) for v in f]
 
         _mqtt_manager.can_bridge.update_config(**kwargs)
         return (

@@ -60,11 +60,13 @@ class CANManager:
         spi_device=None,
         bitrate=DEFAULT_BITRATE,
         crystal=DEFAULT_CRYSTAL,
+        loopback=False,
     ):
         self.spi_bus = spi_bus
         self.spi_device = spi_device  # None = auto-probe spidev0.1 then spidev0.0
         self.bitrate = bitrate
         self.crystal = crystal
+        self.loopback = loopback
 
         self.controller: Optional[MCP2515] = None
         self.connected = False
@@ -138,7 +140,7 @@ class CANManager:
                 crystal=self.crystal,
             )
 
-            if not controller.init(bitrate=self.bitrate):
+            if not controller.init(bitrate=self.bitrate, loopback=self.loopback):
                 controller.close()
                 raise RuntimeError(
                     "MCP2515 init failed - check wiring, 5V supply, and crystal value"
@@ -201,14 +203,14 @@ class CANManager:
                     continue
 
                 # 1. Process received messages
-                buf = self.controller.available()
-                if buf:
-                    msg = self.controller.read_message(buf)
-                    if msg:
-                        consecutive_errors = 0
-                        health_failures = 0  # traffic flowing → bus alive
-                        last_rx_time = time.time()
-                        self._handle_rx(msg)
+                with self._lock:
+                    buf = self.controller.available()
+                    msg = self.controller.read_message(buf) if buf else None
+                if buf and msg:
+                    consecutive_errors = 0
+                    health_failures = 0  # traffic flowing → bus alive
+                    last_rx_time = time.time()
+                    self._handle_rx(msg)
 
                 # 2. Periodic health-check.  If real CAN traffic was received
                 #    within the last interval, the bus is provably alive
@@ -236,11 +238,12 @@ class CANManager:
                         f"health-check failures"
                     )
                     if self.controller:
-                        try:
-                            self.controller.close()
-                        except Exception:
-                            pass
-                        self.controller = None
+                        with self._lock:
+                            try:
+                                self.controller.close()
+                            except Exception:
+                                pass
+                            self.controller = None
                     self.connected = False
                     health_status.update(
                         "can",
@@ -266,11 +269,12 @@ class CANManager:
                         f"CAN disconnected — {consecutive_errors} consecutive SPI errors"
                     )
                     if self.controller:
-                        try:
-                            self.controller.close()
-                        except Exception:
-                            pass
-                        self.controller = None
+                        with self._lock:
+                            try:
+                                self.controller.close()
+                            except Exception:
+                                pass
+                            self.controller = None
                     self.connected = False
                     health_status.update("can", "unhealthy", "Disconnected (SPI error)")
                     consecutive_errors = 0
@@ -286,47 +290,48 @@ class CANManager:
         1. Poll TXB2CTRL.TXERR — set when transmission fails after all
            retries (MCP2515 goes bus-off, TXREQ clears, TXERR latches).
         2. Read EFLG.TXBO — bus-off flag set when TEC hits 256.
-        Either flag means the bus has no other node to ACK frames."""
-        try:
-            probe = CANMessage(
-                can_id=HEALTH_CHECK_CAN_ID,
-                data=[0x00],
-                dlc=1,
-            )
+         Either flag means the bus has no other node to ACK frames."""
+        with self._lock:
+            try:
+                probe = CANMessage(
+                    can_id=HEALTH_CHECK_CAN_ID,
+                    data=[0x00],
+                    dlc=1,
+                )
 
-            if self.controller.send_message(probe, txbuf=HEALTH_TXBUF):
-                deadline = time.time() + 0.08
-                result = "pending"
-                while result == "pending" and time.time() < deadline:
-                    time.sleep(0.002)
+                if self.controller.send_message(probe, txbuf=HEALTH_TXBUF):
+                    deadline = time.time() + 0.08
+                    result = "pending"
+                    while result == "pending" and time.time() < deadline:
+                        time.sleep(0.002)
+                        try:
+                            result = self.controller.check_tx_result(HEALTH_TXBUF)
+                            if result == "error":
+                                return False
+                            if result == "success":
+                                return True
+                            # Still pending — check if chip hit bus-off
+                            eflg = self.controller.get_error_flags()
+                            if eflg & 0x20:  # TXBO
+                                return False
+                        except Exception:
+                            break
+                    # Timed out — abort the stuck transmission so the next
+                    # health-check starts with a clean buffer.
+                    self.controller.abort_tx(HEALTH_TXBUF)
+                    return False  # timed out while pending → assume failure
+                else:
+                    # TX buffer still busy from a prior (or user) message.
+                    # Check if the chip is already in bus-off / error-passive.
                     try:
-                        result = self.controller.check_tx_result(HEALTH_TXBUF)
-                        if result == "error":
-                            return False
-                        if result == "success":
-                            return True
-                        # Still pending — check if chip hit bus-off
                         eflg = self.controller.get_error_flags()
-                        if eflg & 0x20:  # TXBO
+                        if eflg & 0x30:  # TXBO | TXEP
                             return False
                     except Exception:
-                        break
-                # Timed out — abort the stuck transmission so the next
-                # health-check starts with a clean buffer.
-                self.controller.abort_tx(HEALTH_TXBUF)
-                return False  # timed out while pending → assume failure
-            else:
-                # TX buffer still busy from a prior (or user) message.
-                # Check if the chip is already in bus-off / error-passive.
-                try:
-                    eflg = self.controller.get_error_flags()
-                    if eflg & 0x30:  # TXBO | TXEP
-                        return False
-                except Exception:
-                    pass
-                return True  # busy but no error flags → inconclusive, assume OK
-        except Exception:
-            return False
+                        pass
+                    return True  # busy but no error flags → inconclusive, assume OK
+            except Exception:
+                return False
 
     def _handle_rx(self, msg: CANMessage):
         self.stats["rx_total"] += 1
@@ -353,12 +358,12 @@ class CANManager:
     def send_message(
         self, can_id: int, data: List[int], extended: bool = False
     ) -> bool:
-        if not self.connected or not self.controller:
-            raise RuntimeError("CAN not connected")
         if len(data) > 8:
             raise ValueError("CAN data must be <= 8 bytes")
 
         with self._lock:
+            if not self.connected or not self.controller:
+                raise RuntimeError("CAN not connected")
             msg = CANMessage(can_id=can_id, data=data, dlc=len(data), extended=extended)
             ok = self.controller.send_message(msg)
 
