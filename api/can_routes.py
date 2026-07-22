@@ -13,6 +13,7 @@ from api.validators import (
     validate_can_crystal,
     validate_can_id,
     validate_can_payload,
+    validate_can_id_filter,
     validate_count,
     require_fields,
 )
@@ -107,3 +108,20 @@ def send():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@can_api.route("/api/can/filter", methods=["POST"])
+@require_role("operator")
+def set_filter():
+    """Body: {"id_filter": ["0x100", "0x200"]}  — int or hex strings.
+    Omit or pass [] to clear the filter — all IDs pass through.
+    Applies immediately; does not require disconnecting."""
+    try:
+        data = parse_body(request)
+        ids = validate_can_id_filter(data.get("id_filter", []))
+        _can_manager.set_id_filter(ids)
+        return jsonify(
+            {"message": "CAN filter updated", "status": _can_manager.get_status()}
+        )
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400

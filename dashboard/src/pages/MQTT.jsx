@@ -413,6 +413,9 @@ function CANBridgeCard({
           disabled={!isAdmin || s.running}
           style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }} />
       </div>
+      <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "-8px", marginBottom: "4px" }}>
+        Independent from the CAN page's live-view filter.
+      </div>
       {isAdmin && (
         <button className="btn-default" style={{ padding: "4px 12px", fontSize: "11px", marginBottom: "12px" }}
           onClick={onConfig} disabled={s.running}>Apply Config</button>

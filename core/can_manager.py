@@ -77,6 +77,7 @@ class CANManager:
 
         self.message_log = deque(maxlen=1000)
         self.subscribers: List[Callable] = []
+        self.id_filter: set = set()  # empty = no filter, all IDs pass
 
         self.stats = {
             "rx_total": 0,
@@ -399,6 +400,7 @@ class CANManager:
                 "errors": self.stats["errors"],
                 "uptime": uptime,
                 "circuit_breaker": self.breaker.get_state(),
+                "id_filter": sorted(self.id_filter),
             }
 
     def get_recent_messages(self, count: int = 100) -> List[Dict]:
@@ -414,6 +416,22 @@ class CANManager:
     def unsubscribe(self, callback: Callable):
         if callback in self.subscribers:
             self.subscribers.remove(callback)
+
+    def set_id_filter(self, ids: list = None):
+        """Update the RX filter. Empty/None list = listen to all IDs.
+        Applies immediately — no need to disconnect first."""
+        with self._lock:
+            self.id_filter = set(ids) if ids else set()
+        logger.info(
+            f"CAN RX filter updated: "
+            f"{sorted(self.id_filter) if self.id_filter else 'ALL (no filter)'}"
+        )
+
+    def matches_filter(self, can_id: int) -> bool:
+        """True if can_id passes the current RX filter. Empty filter = all
+        pass. This is opt-in — consumers call it explicitly. The MQTT CAN
+        bridge has its own independent id_filter and is NOT gated here."""
+        return not self.id_filter or can_id in self.id_filter
 
 
 # Module-level singleton - import `can_manager` directly once this is

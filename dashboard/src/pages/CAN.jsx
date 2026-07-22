@@ -16,12 +16,21 @@ export default function CAN() {
   const [canId, setCanId] = useState("");
   const [dataHex, setDataHex] = useState("");
   const [extended, setExtended] = useState(false);
+  const [idFilter, setIdFilter] = useState("");
   const isOperator = role === "operator" || role === "admin";
 
   const fetchStatus = async () => {
     try {
       const r = await apiGet("/api/can/status");
-      setStatus(await r.json());
+      const d = await r.json();
+      setStatus(d);
+      if (idFilter === "" && d.id_filter?.length > 0) {
+        setIdFilter(
+          d.id_filter
+            .map((id) => "0x" + id.toString(16).toUpperCase())
+            .join(", ")
+        );
+      }
     } catch {}
   };
 
@@ -84,6 +93,26 @@ export default function CAN() {
   const handleClear = async () => {
     await apiPost("/api/can/messages/clear", {});
     setMessages([]);
+  };
+
+  const handleApplyFilter = async () => {
+    const ids = idFilter
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const r = await apiPost("/api/can/filter", { id_filter: ids });
+    const d = await r.json();
+    if (r.ok) {
+      showToast(
+        ids.length
+          ? `Filter applied: ${ids.length} ID(s)`
+          : "Filter cleared — listening to all",
+        "success"
+      );
+      setStatus(d.status);
+    } else {
+      showToast(d.error || "Failed to apply filter", "error");
+    }
   };
 
   const connected = status.connected;
@@ -173,6 +202,42 @@ export default function CAN() {
               <span className="slider" />
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          Live View Filter
+          {isOperator && (
+            <button
+              className="btn-default"
+              style={{ padding: "4px 12px", fontSize: "11px" }}
+              onClick={handleApplyFilter}
+            >
+              Apply
+            </button>
+          )}
+        </div>
+        <div className="form-row">
+          <label>CAN ID Filter — only affects this Message Log view, empty = all</label>
+          <input
+            value={idFilter}
+            onChange={(e) => setIdFilter(e.target.value)}
+            placeholder="e.g. 0x100, 0x200"
+            disabled={!isOperator}
+            style={{ fontFamily: "var(--font-mono)", fontSize: "11px" }}
+          />
+        </div>
+        {status.id_filter?.length > 0 && (
+          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+            Active:{" "}
+            {status.id_filter
+              .map((id) => "0x" + id.toString(16).toUpperCase())
+              .join(", ")}
+          </div>
+        )}
+        <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "4px" }}>
+          Does not affect the MQTT bridge — set its filter separately on the MQTT page.
         </div>
       </div>
 

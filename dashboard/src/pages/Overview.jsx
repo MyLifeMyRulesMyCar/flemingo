@@ -59,7 +59,7 @@ export default function Overview() {
 
   const canOk = health?.can?.connected;
   const modbusOk = (health?.modbus?.connected_count || 0) > 0;
-  const watchdogOk = health?.watchdog?.alive;
+  const watchdogOk = health?.watchdog?.status === "healthy";
 
   const uptimeH = info.uptime_seconds
     ? `${Math.floor(info.uptime_seconds / 3600)}h ${Math.floor((info.uptime_seconds % 3600) / 60)}m`

@@ -208,6 +208,18 @@ def validate_can_payload(value: Any) -> list[int]:
     return result
 
 
+def validate_can_id_filter(value: Any) -> list[int]:
+    """List of CAN IDs for CANManager's RX filter. Each element may be
+    int or hex string ("0x123"). Accepts std + extended IDs. Empty list
+    clears the filter (all IDs pass)."""
+    if not isinstance(value, list):
+        raise ValidationError(f"'id_filter' must be a list, got {type(value).__name__}")
+    result = set()
+    for v in value:
+        result.add(validate_can_id(v, extended=True))
+    return sorted(result)
+
+
 def validate_count(
     value: Any, name: str = "count", min_val: int = 1, max_val: int = 1000
 ) -> int:

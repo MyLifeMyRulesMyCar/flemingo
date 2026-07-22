@@ -114,3 +114,53 @@ class TestCANRoutes:
             headers={"Authorization": f"Bearer {client.tokens['viewer']}"},
         )
         assert resp.status_code == 200
+
+    def test_set_filter_requires_operator(self, client):
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": ["0x100"]},
+            headers={"Authorization": f"Bearer {client.tokens['viewer']}"},
+        )
+        assert resp.status_code == 403
+
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": ["0x100"]},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
+        assert resp.status_code == 200
+        client.mock_can.set_id_filter.assert_called_with([256])
+
+    def test_set_filter_accepts_hex_and_int(self, client):
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": ["0x100", 291]},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
+        assert resp.status_code == 200
+        client.mock_can.set_id_filter.assert_called_with([256, 291])
+
+    def test_set_filter_rejects_non_list(self, client):
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": "0x100"},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
+        assert resp.status_code == 400
+
+    def test_set_filter_rejects_out_of_range_id(self, client):
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": [0x20000000]},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
+        assert resp.status_code == 400
+
+    def test_set_filter_empty_clears(self, client):
+        resp = client.post(
+            "/api/can/filter",
+            json={"id_filter": []},
+            headers={"Authorization": f"Bearer {client.tokens['operator']}"},
+        )
+        assert resp.status_code == 200
+        client.mock_can.set_id_filter.assert_called_with([])

@@ -157,6 +157,8 @@ def serve_dashboard(path):
 # ============================================
 def broadcast_can_message(message):
     try:
+        if not can_manager.matches_filter(message.get("can_id")):
+            return
         socketio.emit("can_message", message, namespace="/")
     except Exception as e:
         logger.warning(f"WebSocket CAN broadcast error: {e}")
