@@ -9,6 +9,7 @@ import CAN from "./pages/CAN.jsx";
 import Modbus from "./pages/Modbus.jsx";
 import MQTT from "./pages/MQTT.jsx";
 import System from "./pages/System.jsx";
+import ModbusTCP from "./pages/ModbusTCP.jsx";
 import { Outlet } from "react-router-dom";
 
 function ProtectedRoute() {
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="/modbus" element={<Modbus />} />
                 <Route path="/mqtt" element={<MQTT />} />
                 <Route path="/system" element={<System />} />
+                <Route path="/modbus-tcp" element={<ModbusTCP />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -49,7 +49,9 @@ from core.config import load_reliability_config, load_mqtt_config, VERSION
 from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
 from api.system_routes import system_api, set_system_managers
+from api.modbus_tcp_routes import modbus_tcp_api, set_modbus_tcp_server
 from api.socket_handlers import register_socket_handlers
+from core.modbus_tcp_server import ModbusTCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +100,20 @@ io_manager = IOManager()
 # can_manager / modbus_manager are the singletons already created at
 # import time in their own modules - reuse them, don't re-instantiate.
 
+# ============================================
+# Modbus TCP server (Phase 14)
+# Created before the daemon so it can be passed in for watchdog registration.
+# ============================================
+_modbus_tcp = ModbusTCPServer(io_manager, state, can_manager)
+_modbus_tcp.load_register_map()
+set_modbus_tcp_server(_modbus_tcp)
+
 daemon = PurpleIODaemon(
     io_manager,
     poll_interval=0.1,
     can_manager=can_manager,
     modbus_manager=modbus_manager,
+    modbus_tcp_server=_modbus_tcp,
 )
 
 set_io_manager(io_manager)
@@ -127,6 +138,7 @@ app.register_blueprint(health_api)
 app.register_blueprint(auth_api)
 app.register_blueprint(mqtt_api)
 app.register_blueprint(system_api)
+app.register_blueprint(modbus_tcp_api)
 
 print("=" * 60)
 print("PurpleIO API Server - Phase 10 (dashboard)")

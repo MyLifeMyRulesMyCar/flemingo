@@ -43,10 +43,12 @@ class PurpleIODaemon:
         poll_interval: float = 0.1,
         can_manager=None,
         modbus_manager=None,
+        modbus_tcp_server=None,
     ):
         self.manager = io_manager
         self.can_manager = can_manager
         self.modbus_manager = modbus_manager
+        self.modbus_tcp_server = modbus_tcp_server
 
         self.poll_interval = poll_interval
         self.running = True
@@ -74,6 +76,10 @@ class PurpleIODaemon:
             self.watchdog.register_component("can", self._check_can_health)
         if self.modbus_manager is not None:
             self.watchdog.register_component("modbus", self._check_modbus_health)
+        if self.modbus_tcp_server is not None:
+            self.watchdog.register_component(
+                "modbus_tcp", self._check_modbus_tcp_health
+            )
 
     # ----------------------------------------
     # Watchdog health checks
@@ -93,6 +99,13 @@ class PurpleIODaemon:
         if not devices:
             return True
         return not any(d.breaker.state.value == "open" for d in devices)
+
+    def _check_modbus_tcp_health(self) -> bool:
+        if self.modbus_tcp_server is None:
+            return True
+        # Not started = normal, not a failure. The operator chooses
+        # when to start the server via the dashboard or REST API.
+        return True
 
     # ----------------------------------------
     # Main loop

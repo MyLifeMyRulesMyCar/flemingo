@@ -466,3 +466,45 @@ def validate_backup_file(file_obj) -> bytes:
             f"Backup file exceeds {_BACKUP_MAX_BYTES // 1024 // 1024} MB limit"
         )
     return data
+
+
+# ============================================================
+# Modbus TCP validators (Phase 14)
+# ============================================================
+_VALID_FC = {1, 2, 3, 4, 5, 6, 15, 16}
+
+
+def validate_modbus_tcp_port(value: Any) -> int:
+    """TCP port for the Modbus TCP server. Allows 502 (standard Modbus
+    TCP port) and ports ≥ 1024. Reject Flask's bind port (5000)."""
+    v = parse_int(value, "port")
+    if v not in (502,) and v < 1024:
+        raise ValidationError("Modbus TCP port must be ≥ 1024 (or 502)")
+    if v == 5000:
+        raise ValidationError("Port 5000 is reserved for the Flask API")
+    return v
+
+
+def validate_register_map_entry(value: Any) -> dict:
+    """Validate a single register-map entry dict. Returns the cleaned dict.
+    Requires: function_code (1-6,15,16), address (0-65535), source_key (string)."""
+    if not isinstance(value, dict):
+        raise ValidationError("register-map entry must be an object")
+    fc = parse_int(value.get("function_code"), "function_code")
+    if fc not in _VALID_FC:
+        raise ValidationError(
+            f"function_code must be one of {sorted(_VALID_FC)}, got {fc}"
+        )
+    addr = parse_int(value.get("address"), "address")
+    if not (0 <= addr <= 65535):
+        raise ValidationError(f"address must be 0–65535, got {addr}")
+    source = value.get("source_key", "")
+    if not isinstance(source, str) or not source.strip():
+        raise ValidationError("source_key is required")
+    label = str(value.get("label", "")).strip()[:64]
+    return {
+        "function_code": fc,
+        "address": addr,
+        "source_key": source.strip(),
+        "label": label,
+    }

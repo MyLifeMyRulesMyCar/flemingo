@@ -7,7 +7,8 @@ const NAV_ITEMS = [
   { to: "/can",     label: "CAN Bus",  icon: "⇄" },
   { to: "/modbus",  label: "Modbus",   icon: "⧉" },
   { to: "/mqtt",    label: "MQTT",     icon: "⟐" },
-  { to: "/system",  label: "System",   icon: "⚙" },
+  { to: "/system",     label: "System",      icon: "⚙" },
+  { to: "/modbus-tcp", label: "Modbus TCP", icon: "⛓" },
 ];
 
 export default function Sidebar() {
