@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
-import { apiGet, apiPost, apiDelete } from "../api/client.js";
+import { apiGet, apiPost } from "../api/client.js";
 import StatusLed from "../components/StatusLed.jsx";
 import { useToast } from "../components/Toast.jsx";
 

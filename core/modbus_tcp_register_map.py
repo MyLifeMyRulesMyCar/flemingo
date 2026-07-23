@@ -38,7 +38,8 @@ VALID_SOURCE_PATTERNS = {
 }
 
 VALID_FC_READ = {1, 2, 3, 4}
-VALID_FC_WRITE = {5, 6, 15, 16}
+VALID_FC_WRITE = {5, 15}
+# FC 6/16 not yet implemented
 VALID_FC = VALID_FC_READ | VALID_FC_WRITE
 
 

@@ -140,26 +140,6 @@ def save_register_map_route():
         return jsonify({"error": str(e)}), 400
 
 
-@modbus_tcp_api.route("/api/modbus-tcp/register-map/<int:entry_id>", methods=["DELETE"])
-@require_role("admin")
-def delete_register_map_entry(entry_id):
-    entries = _modbus_tcp_server.get_register_map()
-    if entry_id < 0 or entry_id >= len(entries):
-        return jsonify({"error": "Entry index out of range"}), 400
-
-    from core.modbus_tcp_register_map import (
-        save_register_map,
-        RegisterMapEntry,
-    )
-
-    entries.pop(entry_id)
-    mapped = [RegisterMapEntry.from_dict(e) for e in entries]
-    save_register_map(mapped)
-    _modbus_tcp_server.reload_register_map()
-
-    return jsonify({"message": "Entry deleted"}), 200
-
-
 @modbus_tcp_api.route("/api/modbus-tcp/register-map/validate", methods=["POST"])
 @require_role("operator")
 def validate_register_map():

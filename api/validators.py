@@ -471,7 +471,7 @@ def validate_backup_file(file_obj) -> bytes:
 # ============================================================
 # Modbus TCP validators (Phase 14)
 # ============================================================
-_VALID_FC = {1, 2, 3, 4, 5, 6, 15, 16}
+_VALID_FC = {1, 2, 3, 4, 5, 15}
 
 
 def validate_modbus_tcp_port(value: Any) -> int:

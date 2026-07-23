@@ -57,6 +57,8 @@ class ModbusTCPServer:
         self.running = False
         self._thread = None
         self._register_map = None
+        self._loop = None
+        self._server = None
 
         self.stats = {
             "client_count": 0,
@@ -102,9 +104,15 @@ class ModbusTCPServer:
                 return
             self.running = False
 
+        if self._loop and self._server:
+            self._loop.call_soon_threadsafe(self._server.close)
+
         if self._thread:
             self._thread.join(timeout=5)
             self._thread = None
+
+        self._loop = None
+        self._server = None
 
         logger.info("Modbus TCP server stopped")
 
@@ -116,6 +124,7 @@ class ModbusTCPServer:
 
     async def _serve_async(self):
         srv = self  # closure for handler
+        self._loop = asyncio.get_running_loop()
 
         async def handle(reader, writer):
             addr = writer.get_extra_info("peername")
@@ -167,13 +176,18 @@ class ModbusTCPServer:
                             struct.unpack(">HH", pdu[1:5]) if len(pdu) >= 5 else (0, 0)
                         )
                         for i in range(cnt):
-                            byte_idx = 6 + i // 8
-                            bit_idx = i % 8
+                            byte_offset = i // 8
+                            bit_offset = i % 8
                             val = 0
-                            if byte_idx < len(pdu) - 6:
-                                val = (pdu[6 + byte_idx] >> bit_idx) & 1
+                            data_start = 6
+                            byte_idx = data_start + byte_offset
+                            if len(pdu) > byte_idx:
+                                val = (pdu[byte_idx] >> bit_offset) & 1
                             _write_coil(srv, addr + i, val)
-                        response = header + pdu[:5]  # echo header + addr/count
+                        response_pdu = pdu[:5]  # fc + addr + count (not full write PDU)
+                        resp_len = 1 + len(response_pdu)
+                        resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+                        response = resp_header + response_pdu
                     else:
                         # Unknown / unsupported function code
                         response = _build_exception(tid, uid, fc, 1)  # illegal function
@@ -200,8 +214,11 @@ class ModbusTCPServer:
 
         try:
             server = await asyncio.start_server(handle, self.host, self.port)
+            self._server = server
             async with server:
                 await server.serve_forever()
+        except asyncio.CancelledError:
+            pass  # stop() closed the server, expected
         except OSError as e:
             logger.error(f"Modbus TCP server bind failed: {e}")
             self.running = False
