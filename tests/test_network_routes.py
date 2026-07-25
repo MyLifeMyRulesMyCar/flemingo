@@ -101,8 +101,12 @@ class TestNetworkRoutes:
 
     def test_apply_without_confirm_reverts_config(self, auth_tokens, monkeypatch):
         """Apply a candidate and don't confirm — the scheduler must revert."""
-        original = NetworkConfig(ip="192.168.1.150", prefix_len=24, gateway="192.168.1.1")
-        candidate = NetworkConfig(ip="192.168.2.100", prefix_len=24, gateway="192.168.2.1")
+        original = NetworkConfig(
+            ip="192.168.1.150", prefix_len=24, gateway="192.168.1.1"
+        )
+        candidate = NetworkConfig(
+            ip="192.168.2.100", prefix_len=24, gateway="192.168.2.1"
+        )
 
         applied = []
 
@@ -150,13 +154,10 @@ class TestNetworkRoutes:
         # Wait slightly longer than the test delay for the timer to fire.
         time.sleep(0.3)
 
-        status = (
-            c.get(
-                "/api/network/status",
-                headers={"Authorization": f"Bearer {auth_tokens['viewer']}"},
-            )
-            .get_json()
-        )
+        status = c.get(
+            "/api/network/status",
+            headers={"Authorization": f"Bearer {auth_tokens['viewer']}"},
+        ).get_json()
         assert status["pending"] is False
 
         # apply_config called twice: once for candidate, once for revert.
@@ -166,7 +167,9 @@ class TestNetworkRoutes:
 
     def test_apply_without_prior_ip_reverts_to_dhcp(self, auth_tokens, monkeypatch):
         """If eth1 has no current IP, apply should still work and revert to DHCP."""
-        candidate = NetworkConfig(ip="192.168.2.100", prefix_len=24, gateway="192.168.2.1")
+        candidate = NetworkConfig(
+            ip="192.168.2.100", prefix_len=24, gateway="192.168.2.1"
+        )
 
         applied = []
 
@@ -181,7 +184,9 @@ class TestNetworkRoutes:
         def fast_apply_with_revert(self, candidate, delay_seconds=60):
             return _orig_apply(self, candidate, delay_seconds=0.1)
 
-        monkeypatch.setattr(RevertScheduler, "apply_with_revert", fast_apply_with_revert)
+        monkeypatch.setattr(
+            RevertScheduler, "apply_with_revert", fast_apply_with_revert
+        )
         monkeypatch.setattr(
             "core.network_config.get_current_config", fake_get_current_config
         )
@@ -189,10 +194,10 @@ class TestNetworkRoutes:
         monkeypatch.setattr(
             "core.network_config.save_backup", lambda cfg, path=None: None
         )
+        monkeypatch.setattr("core.network_config.load_backup", lambda path=None: None)
         monkeypatch.setattr(
-            "core.network_config.load_backup", lambda path=None: None
+            "core.network_config.revert_to_dhcp", lambda iface=None: None
         )
-        monkeypatch.setattr("core.network_config.revert_to_dhcp", lambda iface=None: None)
         monkeypatch.setattr("core.network_config.os.remove", lambda path: None)
 
         real_sched = RevertScheduler(iface="eth1")
@@ -213,13 +218,10 @@ class TestNetworkRoutes:
 
         time.sleep(0.3)
 
-        status = (
-            c.get(
-                "/api/network/status",
-                headers={"Authorization": f"Bearer {auth_tokens['viewer']}"},
-            )
-            .get_json()
-        )
+        status = c.get(
+            "/api/network/status",
+            headers={"Authorization": f"Bearer {auth_tokens['viewer']}"},
+        ).get_json()
         assert status["pending"] is False
 
         # Candidate applied once; no prior config existed, so revert goes to DHCP.
