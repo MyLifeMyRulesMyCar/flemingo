@@ -121,18 +121,13 @@ def get_current_config(iface: str = DEFAULT_IFACE) -> NetworkConfig:
 # ----------------------------------------------------------------------
 def _get_active_connection_name(iface: str = DEFAULT_IFACE) -> str:
     """The nmcli connection profile name active on this device."""
-    result = _run(
-        ["sudo", "nmcli", "-t", "-f", "GENERAL.CONNECTION", "device", "show", iface]
-    )
+    result = _run(["sudo", "/usr/local/bin/flemingo-net-apply", "get-connection"])
     if result.returncode != 0:
         raise NetworkConfigError(
             f"Could not find active connection for {iface}: {result.stderr.strip()}"
         )
-    line = result.stdout.strip()
-    if ":" not in line:
-        raise NetworkConfigError(f"Unexpected nmcli output for {iface}: {line!r}")
-    name = line.split(":", 1)[1].strip()
-    if not name or name == "--":
+    name = result.stdout.strip()
+    if name == "NONE":
         raise NetworkConfigError(f"No active NetworkManager connection on {iface}")
     return name
 
@@ -140,30 +135,12 @@ def _get_active_connection_name(iface: str = DEFAULT_IFACE) -> str:
 def _get_or_create_connection(iface: str) -> str:
     """Get the active connection name, or auto-create one if eth1 has never
     been configured before (first-cable-plugged-in use case)."""
-    try:
-        return _get_active_connection_name(iface)
-    except NetworkConfigError:
-        logger.info(f"No connection found on {iface} — creating one")
-        conn_name = f"flemingo-{iface}"
-        result = _run(
-            [
-                "sudo",
-                "nmcli",
-                "con",
-                "add",
-                "type",
-                "ethernet",
-                "con-name",
-                conn_name,
-                "ifname",
-                iface,
-            ]
+    result = _run(["sudo", "/usr/local/bin/flemingo-net-apply", "ensure-connection"])
+    if result.returncode != 0:
+        raise NetworkConfigError(
+            f"Cannot create connection for {iface}: {result.stderr.strip()}"
         )
-        if result.returncode != 0:
-            raise NetworkConfigError(
-                f"Cannot create connection for {iface}: {result.stderr.strip()}"
-            )
-        return conn_name
+    return result.stdout.strip()
 
 
 def apply_config(candidate: NetworkConfig, iface: str = DEFAULT_IFACE) -> None:
@@ -185,24 +162,21 @@ def apply_config(candidate: NetworkConfig, iface: str = DEFAULT_IFACE) -> None:
     mod_result = _run(
         [
             "sudo",
-            "nmcli",
-            "con",
-            "mod",
-            conn_name,
-            "ipv4.addresses",
+            "/usr/local/bin/flemingo-net-apply",
+            "apply",
             f"{candidate.ip}/{candidate.prefix_len}",
-            "ipv4.gateway",
             candidate.gateway,
-            "ipv4.method",
-            "manual",
         ]
     )
     if mod_result.returncode != 0:
-        raise NetworkConfigError(f"nmcli con mod failed: {mod_result.stderr.strip()}")
+        raise NetworkConfigError(f"Network apply failed: {mod_result.stderr.strip()}")
 
-    up_result = _run(["sudo", "nmcli", "con", "up", conn_name], timeout=20)
+    up_result = _run(
+        ["sudo", "/usr/local/bin/flemingo-net-apply", "activate"],
+        timeout=20,
+    )
     if up_result.returncode != 0:
-        raise NetworkConfigError(f"nmcli con up failed: {up_result.stderr.strip()}")
+        raise NetworkConfigError(f"Network activate failed: {up_result.stderr.strip()}")
 
     logger.info(
         f"Applied network config on {iface} via '{conn_name}': "
@@ -214,9 +188,7 @@ def revert_to_dhcp(iface: str = DEFAULT_IFACE) -> None:
     """Last-resort fallback — switch back to DHCP. Does NOT run con up
     because that blocks indefinitely when no DHCP server is on the subnet."""
     _assert_not_management_iface(iface)
-    conn_name = _get_or_create_connection(iface)
-    _run(["sudo", "nmcli", "con", "mod", conn_name, "ipv4.method", "auto"])
-    _run(["sudo", "nmcli", "con", "mod", conn_name, "ipv4.addresses", ""])
+    _run(["sudo", "/usr/local/bin/flemingo-net-apply", "dhcp-fallback"])
     logger.warning(f"Reverted {iface} to DHCP (no valid backup config found)")
 
 

@@ -1,0 +1,115 @@
+#!/bin/bash
+# scripts/flemingo-net-apply
+#
+# Privileged helper for Modbus TCP network config (Stage 2). This file
+# is owned by root and is the ONLY thing the flemingo service account
+# has passwordless sudo for — not raw nmcli. It hardcodes eth1 and
+# NEVER accepts a connection name or interface from its caller for any
+# mutating action; it always re-derives "whatever connection is
+# currently on eth1" itself, right before acting. This is what actually
+# makes eth0 unreachable through this feature, not just the Python-side
+# guard in core/network_config.py — that guard stays too, this is
+# defense in depth, not a replacement for it.
+set -euo pipefail
+
+IFACE="eth1"
+CONN_NAME="flemingo-eth1"
+NMCLI="/usr/bin/nmcli"
+
+usage() {
+    echo "Usage: $0 {get-connection|ensure-connection|apply <ip/prefix> <gateway>|activate|dhcp-fallback}" >&2
+    exit 1
+}
+
+get_conn() {
+    "$NMCLI" -t -f GENERAL.CONNECTION device show "$IFACE" 2>/dev/null | cut -d: -f2
+}
+
+# Real octet-range checks, not just digit-count regex — "999" matches
+# [0-9]{1,3} but isn't a valid octet. Digit-count-only regex was tried
+# first here and it let a bad gateway like 10.0.0.999 straight through
+# undetected until this was actually run against test input.
+valid_octet() {
+    [[ "$1" =~ ^[0-9]{1,3}$ ]] || return 1
+    (( 10#$1 >= 0 && 10#$1 <= 255 ))
+}
+
+valid_ipv4() {
+    local ip="$1" o parts
+    IFS='.' read -r -a parts <<< "$ip"
+    [[ ${#parts[@]} -eq 4 ]] || return 1
+    for o in "${parts[@]}"; do
+        valid_octet "$o" || return 1
+    done
+    return 0
+}
+
+valid_ipv4_with_prefix() {
+    local addr="$1"
+    [[ "$addr" == */* ]] || return 1
+    local ip="${addr%%/*}" prefix="${addr##*/}"
+    valid_ipv4 "$ip" || return 1
+    [[ "$prefix" =~ ^[0-9]{1,2}$ ]] || return 1
+    (( 10#$prefix >= 1 && 10#$prefix <= 32 ))
+}
+
+require_conn() {
+    local name
+    name="$(get_conn)"
+    if [[ -z "$name" || "$name" == "--" ]]; then
+        echo "No NetworkManager connection currently on $IFACE" >&2
+        exit 1
+    fi
+    echo "$name"
+}
+
+[[ $# -ge 1 ]] || usage
+
+case "$1" in
+    get-connection)
+        name="$(get_conn)"
+        if [[ -z "$name" || "$name" == "--" ]]; then
+            echo "NONE"
+        else
+            echo "$name"
+        fi
+        ;;
+
+    ensure-connection)
+        name="$(get_conn)"
+        if [[ -z "$name" || "$name" == "--" ]]; then
+            "$NMCLI" con add type ethernet con-name "$CONN_NAME" ifname "$IFACE" >/dev/null
+            echo "$CONN_NAME"
+        else
+            echo "$name"
+        fi
+        ;;
+
+    apply)
+        [[ $# -eq 3 ]] || usage
+        addr="$2"
+        gw="$3"
+        # Defense in depth: the Python caller already validated these,
+        # but this script is the actual privilege boundary and must not
+        # trust its caller blindly.
+        valid_ipv4_with_prefix "$addr" || { echo "Bad address: $addr" >&2; exit 1; }
+        valid_ipv4 "$gw" || { echo "Bad gateway: $gw" >&2; exit 1; }
+        name="$(require_conn)"
+        exec "$NMCLI" con mod "$name" ipv4.addresses "$addr" ipv4.gateway "$gw" ipv4.method manual
+        ;;
+
+    activate)
+        name="$(require_conn)"
+        exec "$NMCLI" con up "$name"
+        ;;
+
+    dhcp-fallback)
+        name="$(require_conn)"
+        "$NMCLI" con mod "$name" ipv4.method auto
+        exec "$NMCLI" con mod "$name" ipv4.addresses ""
+        ;;
+
+    *)
+        usage
+        ;;
+esac

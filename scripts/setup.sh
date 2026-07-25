@@ -53,11 +53,14 @@ echo "[4/7] Adding $SERVICE_USER to gpio/spi/dialout/netdev groups..."
 usermod -aG gpio,spi,dialout,netdev "$SERVICE_USER" || true
 echo "      Done (log out/in for group changes to take effect if not using systemd)."
 
-# Grant passwordless nmcli for the network config feature (Stage 2)
+# Install the privileged network-config wrapper (Stage 2)
+echo "      Installing flemingo-net-apply wrapper..."
+install -o root -g root -m 0755 "$REPO_ROOT/scripts/flemingo-net-apply" /usr/local/bin/flemingo-net-apply
+
 if [[ ! -f /etc/sudoers.d/flemingo-nmcli ]]; then
-    echo "      Adding sudoers rule for nmcli..."
+    echo "      Adding sudoers rule for flemingo-net-apply..."
     tee "/etc/sudoers.d/flemingo-nmcli" > /dev/null << EOF_NMCLI
-$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/local/bin/flemingo-net-apply
 EOF_NMCLI
     chmod 0440 /etc/sudoers.d/flemingo-nmcli
     echo "      Done."

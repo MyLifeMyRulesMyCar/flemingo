@@ -34,11 +34,22 @@ export default function ModbusTCP() {
   const [candidate, setCandidate] = useState({ ip: "", prefix_len: 24, gateway: "" });
   const [revertStatus, setRevertStatus] = useState({});
   const [showNetworkConfirm, setShowNetworkConfirm] = useState(false);
+  const [isolationWarning, setIsolationWarning] = useState("");
 
   const fetchStatus = async () => {
     try {
       const r = await apiGet("/api/modbus-tcp/status");
-      setStatus(await r.json());
+      const d = await r.json();
+      setStatus(d);
+      if (d.running && d.host === "0.0.0.0") {
+        setIsolationWarning(
+          "eth1 has no active IP or cable — listening on all interfaces " +
+            "(0.0.0.0), not isolated from the management network. " +
+            "Configure eth1's static IP and plug in the cable first."
+        );
+      } else {
+        setIsolationWarning("");
+      }
     } catch {}
   };
 
@@ -76,6 +87,8 @@ export default function ModbusTCP() {
     const t = setInterval(() => {
       fetchRevertStatus();
       fetchNetwork();
+      fetchConfig();
+      fetchStatus();
     }, 3000);
     return () => clearInterval(t);
   }, []);
@@ -104,14 +117,16 @@ export default function ModbusTCP() {
 
   const handleStart = async () => {
     const r = await apiPost("/api/modbus-tcp/start", { port: config.port });
+    const d = await r.json();
     if (r.ok) showToast("Server started", "success");
-    else showToast((await r.json()).error || "Failed", "error");
+    else showToast(d.error || "Failed", "error");
     fetchStatus();
   };
 
   const handleStop = async () => {
     await apiPost("/api/modbus-tcp/stop", {});
     showToast("Server stopped", "success");
+    setIsolationWarning("");
     fetchStatus();
   };
 
@@ -177,6 +192,15 @@ export default function ModbusTCP() {
             <button className="btn-default" onClick={handleStop} disabled={!status.running}>
               Stop
             </button>
+          </div>
+        )}
+        {isolationWarning && (
+          <div style={{
+            background: "#3a2a0a", border: "1px solid var(--status-warn)",
+            color: "var(--status-warn)", padding: "8px 12px",
+            borderRadius: "var(--radius)", fontSize: "12px", marginTop: "10px",
+          }}>
+            {isolationWarning}
           </div>
         )}
       </div>

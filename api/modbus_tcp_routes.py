@@ -10,6 +10,7 @@ from api.validators import (
     parse_body,
     validate_modbus_tcp_port,
 )
+from core.network_config import get_current_config, NetworkConfigError, DEFAULT_IFACE
 
 modbus_tcp_api = Blueprint("modbus_tcp_api", __name__)
 
@@ -19,6 +20,24 @@ _modbus_tcp_server = None
 def set_modbus_tcp_server(server):
     global _modbus_tcp_server
     _modbus_tcp_server = server
+
+
+def _resolve_bind_host():
+    """Returns (host, isolated). isolated=False means eth1 has no IP
+    configured yet or no cable is plugged — falls back to 0.0.0.0 with
+    a warning so the operator knows the server is not isolated."""
+    try:
+        cfg = get_current_config(DEFAULT_IFACE)
+        # Even with a static IP configured, verify the cable is plugged.
+        try:
+            with open(f"/sys/class/net/{DEFAULT_IFACE}/carrier") as f:
+                if f.read().strip() != "1":
+                    return "0.0.0.0", False
+        except FileNotFoundError:
+            pass
+        return cfg.ip, True
+    except NetworkConfigError:
+        return "0.0.0.0", False
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -43,16 +62,19 @@ def start_server():
     try:
         data = parse_body(request)
         port = validate_modbus_tcp_port(data.get("port", 5020))
-        _modbus_tcp_server.start(host="0.0.0.0", port=port)
-        return (
-            jsonify(
-                {
-                    "message": "Modbus TCP server started",
-                    "status": _modbus_tcp_server.get_status(),
-                }
-            ),
-            200,
-        )
+        host, isolated = _resolve_bind_host()
+        _modbus_tcp_server.start(host=host, port=port)
+        resp = {
+            "message": "Modbus TCP server started",
+            "status": _modbus_tcp_server.get_status(),
+        }
+        if not isolated:
+            resp["warning"] = (
+                "eth1 has no IP configured — listening on all interfaces "
+                "(0.0.0.0), not isolated from the management network. "
+                "Configure eth1's static IP first."
+            )
+        return jsonify(resp), 200
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
@@ -88,7 +110,8 @@ def update_config():
         if was_running:
             _modbus_tcp_server.stop()
         try:
-            _modbus_tcp_server.start(host="0.0.0.0", port=port)
+            host, _ = _resolve_bind_host()
+            _modbus_tcp_server.start(host=host, port=port)
         except RuntimeError:
             pass
         return (

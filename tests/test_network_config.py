@@ -167,14 +167,56 @@ class TestRevertTimer:
 class TestAutoCreateConnection:
     def test_creates_connection_if_none_exists(self):
         with patch("core.network_config._run") as mock_run:
-            # First call: nmcli device show returns no active connection
-            # Second call: nmcli con add succeeds
-            mock_run.side_effect = [
-                MagicMock(
-                    returncode=0,
-                    stdout="GENERAL.CONNECTION:--\n",
-                ),
-                MagicMock(returncode=0, stdout=""),
-            ]
+            mock_run.return_value = MagicMock(returncode=0, stdout="flemingo-eth1\n")
             name = _get_or_create_connection("eth1")
             assert name == "flemingo-eth1"
+            mock_run.assert_called_once()
+            args = mock_run.call_args[0][0]
+            assert args == [
+                "sudo",
+                "/usr/local/bin/flemingo-net-apply",
+                "ensure-connection",
+            ]
+
+
+class TestApplyConfigArgShape:
+    """Lock in the exact command shapes apply_config passes to _run."""
+
+    def test_apply_config_builds_correct_wrapper_args(self, tmp_path):
+        with (
+            patch("core.network_config._run") as mock_run,
+            patch("core.network_config._get_or_create_connection") as mock_conn,
+            patch("core.network_config._assert_not_management_iface"),
+        ):
+
+            mock_conn.return_value = "flemingo-eth1"
+            mock_run.return_value = MagicMock(returncode=0)
+
+            # Create a fake carrier file
+            carrier = tmp_path / "carrier"
+            carrier.write_text("1")
+
+            with patch("builtins.open") as mock_open:
+                mock_open.return_value.__enter__.return_value.read.return_value = "1"
+                apply_config(
+                    NetworkConfig("192.168.2.100", 24, "192.168.2.1"),
+                    iface="eth1",
+                )
+
+            assert mock_run.call_count == 2
+
+            apply_args = mock_run.call_args_list[0][0][0]
+            assert apply_args == [
+                "sudo",
+                "/usr/local/bin/flemingo-net-apply",
+                "apply",
+                "192.168.2.100/24",
+                "192.168.2.1",
+            ]
+
+            activate_args = mock_run.call_args_list[1][0][0]
+            assert activate_args == [
+                "sudo",
+                "/usr/local/bin/flemingo-net-apply",
+                "activate",
+            ]

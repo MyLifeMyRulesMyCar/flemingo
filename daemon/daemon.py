@@ -56,7 +56,7 @@ class PurpleIODaemon:
         self.last_di = [0, 0, 0, 0]
         self._di_candidate = [0, 0, 0, 0]
         self._di_stable_count = [0, 0, 0, 0]
-        self.debounce_reads = 3  # ~300ms at 0.1s poll (3 reads × 0.1s)
+        self.debounce_reads = 2  # ~200ms at 0.1s poll (2 reads × 0.1s)
         self._di_initialized = False
         self.consecutive_errors = 0
         self.max_consecutive_errors = 10
