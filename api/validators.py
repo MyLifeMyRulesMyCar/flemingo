@@ -508,3 +508,56 @@ def validate_register_map_entry(value: Any) -> dict:
         "source_key": source.strip(),
         "label": label,
     }
+
+
+# ============================================================
+# Network config validators (Stage 2)
+# ============================================================
+
+
+def validate_static_ip(value: Any) -> str:
+    """IPv4 address. Reject 0.0.0.0, 127.x, and malformed addresses."""
+    if not isinstance(value, str):
+        raise ValidationError("IP must be a string")
+    v = value.strip()
+    parts = v.split(".")
+    if len(parts) != 4:
+        raise ValidationError(f"IP must have 4 octets, got {len(parts)}")
+    for i, p in enumerate(parts):
+        try:
+            n = int(p)
+        except ValueError:
+            raise ValidationError(f"IP octet {i + 1} is not a number: {p!r}")
+        if not (0 <= n <= 255):
+            raise ValidationError(f"IP octet {i + 1} must be 0–255, got {n}")
+    if v.startswith("127."):
+        raise ValidationError("Localhost IP not allowed")
+    if v == "0.0.0.0":
+        raise ValidationError("0.0.0.0 is not a valid static IP")
+    return v
+
+
+def validate_prefix_len(value: Any) -> int:
+    """Subnet prefix length: 1–32."""
+    v = parse_int(value, "prefix_len")
+    if not (1 <= v <= 32):
+        raise ValidationError(f"prefix_len must be 1–32, got {v}")
+    return v
+
+
+def validate_gateway_ip(value: Any) -> str:
+    """Same as validate_static_ip but also usable as a standalone check."""
+    return validate_static_ip(value)
+
+
+def validate_gateway_in_subnet(ip: str, prefix_len: int, gateway: str) -> None:
+    """Confirm the gateway is reachable within the candidate subnet."""
+    import ipaddress
+
+    net = ipaddress.ip_network(f"{ip}/{prefix_len}", strict=False)
+    gw = ipaddress.ip_address(gateway)
+    if gw not in net:
+        raise ValidationError(
+            f"Gateway {gateway} is not in subnet {net} — "
+            f"the gateway must be reachable from {ip}/{prefix_len}"
+        )

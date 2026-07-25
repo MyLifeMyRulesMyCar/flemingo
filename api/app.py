@@ -50,8 +50,10 @@ from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
 from api.system_routes import system_api, set_system_managers
 from api.modbus_tcp_routes import modbus_tcp_api, set_modbus_tcp_server
+from api.network_routes import network_api, set_network_scheduler
 from api.socket_handlers import register_socket_handlers
 from core.modbus_tcp_server import ModbusTCPServer
+from core.network_config import RevertScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +110,13 @@ _modbus_tcp = ModbusTCPServer(io_manager, state, can_manager)
 _modbus_tcp.load_register_map()
 set_modbus_tcp_server(_modbus_tcp)
 
+# ============================================
+# Network config scheduler (Stage 2)
+# Auto-reverts bad IP changes after 60s unless confirmed.
+# ============================================
+_net_sched = RevertScheduler()
+set_network_scheduler(_net_sched)
+
 daemon = PurpleIODaemon(
     io_manager,
     poll_interval=0.1,
@@ -139,6 +148,7 @@ app.register_blueprint(auth_api)
 app.register_blueprint(mqtt_api)
 app.register_blueprint(system_api)
 app.register_blueprint(modbus_tcp_api)
+app.register_blueprint(network_api)
 
 print("=" * 60)
 print("PurpleIO API Server - Phase 10 (dashboard)")

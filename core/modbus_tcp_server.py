@@ -172,22 +172,7 @@ class ModbusTCPServer:
                         _write_coil(srv, addr, 1 if val == 0xFF00 else 0)
                         response = header + pdu  # echo
                     elif fc == 15:  # Write Multiple Coils
-                        addr, cnt = (
-                            struct.unpack(">HH", pdu[1:5]) if len(pdu) >= 5 else (0, 0)
-                        )
-                        for i in range(cnt):
-                            byte_offset = i // 8
-                            bit_offset = i % 8
-                            val = 0
-                            data_start = 6
-                            byte_idx = data_start + byte_offset
-                            if len(pdu) > byte_idx:
-                                val = (pdu[byte_idx] >> bit_offset) & 1
-                            _write_coil(srv, addr + i, val)
-                        response_pdu = pdu[:5]  # fc + addr + count (not full write PDU)
-                        resp_len = 1 + len(response_pdu)
-                        resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
-                        response = resp_header + response_pdu
+                        response = _parse_fc15_write(pdu, tid, uid, srv)
                     else:
                         # Unknown / unsupported function code
                         response = _build_exception(tid, uid, fc, 1)  # illegal function
@@ -293,6 +278,25 @@ def _build_exception(tid, uid, fc, code):
 # ═══════════════════════════════════════════════════════════════════
 # Write helpers (FC 5/15)
 # ═══════════════════════════════════════════════════════════════════
+
+
+def _parse_fc15_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
+    """Parse and execute an FC 15 (Write Multiple Coils) request.
+    Returns the framed response bytes ready to send on the wire."""
+    addr, cnt = struct.unpack(">HH", pdu[1:5]) if len(pdu) >= 5 else (0, 0)
+    for i in range(cnt):
+        byte_offset = i // 8
+        bit_offset = i % 8
+        val = 0
+        data_start = 6
+        byte_idx = data_start + byte_offset
+        if len(pdu) > byte_idx:
+            val = (pdu[byte_idx] >> bit_offset) & 1
+        _write_coil(server, addr + i, val)
+    response_pdu = pdu[:5]  # fc + addr + count
+    resp_len = 1 + len(response_pdu)
+    resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+    return resp_header + response_pdu
 
 
 def _write_coil(server, channel, value):

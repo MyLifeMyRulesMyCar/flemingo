@@ -18,6 +18,7 @@ from core.modbus_tcp_server import (
     _build_register_response,
     _build_exception,
     _write_coil,
+    _parse_fc15_write,
 )
 
 
@@ -112,15 +113,40 @@ class TestMulticoilWriteFrames:
 
     def test_fc15_response_length(self):
         """FC 15 response must have MBAP length=6, not the request's length."""
-        # Simulate a request: write 4 coils at address 0, all ON
-        # PDU: fc(0x0F) + addr(0,0) + cnt(0,4) + byte_count(1) + data(0x0F)
         pdu = struct.pack(">BHHBB", 0x0F, 0, 4, 1, 0x0F)
         tid, pid, uid = 1, 0, 1
 
-        # Build expected response: fc + addr(2B) + count(2B) = 5 bytes PDU
-        expected_len = 3 + 5  # MBAP header counts itself (3) + PDU
+        expected_len = 1 + 5  # UID(1) + PDU(5) = 6
         expected_resp = struct.pack(">HHHB", tid, pid, expected_len, uid) + pdu[:5]
         assert len(expected_resp) == 12  # 7 MBAP + 5 PDU
-        # Verify the response length is correct
         _, _, resp_len, _ = struct.unpack(">HHHB", expected_resp[:7])
-        assert resp_len == 8  # 3 header + 5 PDU
+        assert resp_len == 6
+
+    def test_fc15_parse_writes_correct_coils(self):
+        """Exercises the ACTUAL FC15 parsing code from _serve_async —
+        verifies bit ordering, byte offsets, and response framing."""
+        mock_io = MagicMock()
+        mock_state = MagicMock()
+
+        class FakeServer:
+            _io = mock_io
+            _state = mock_state
+
+        srv = FakeServer()
+
+        # PDU: fc(0x0F) + addr(0,0) + cnt(0,4) + byte_count(1) + data(0b1010)
+        # Bits: DO0=0, DO1=1, DO2=0, DO3=1
+        pdu = struct.pack(">BHHBB", 0x0F, 0, 4, 1, 0b00001010)
+        response = _parse_fc15_write(pdu, tid=1, uid=0, server=srv)
+
+        # Verify writes hit io_manager
+        assert mock_io.write_output.call_count == 4
+        mock_io.write_output.assert_any_call(0, 0)
+        mock_io.write_output.assert_any_call(1, 1)
+        mock_io.write_output.assert_any_call(2, 0)
+        mock_io.write_output.assert_any_call(3, 1)
+
+        # Verify response framing
+        assert len(response) == 12  # 7 MBAP + 5 PDU
+        _, _, length, _ = struct.unpack(">HHHB", response[:7])
+        assert length == 6  # UID(1) + PDU(5) = 6

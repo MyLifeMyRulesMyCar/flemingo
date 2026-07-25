@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../auth/AuthContext.jsx";
 import { apiGet, apiPost } from "../api/client.js";
 import StatusLed from "../components/StatusLed.jsx";
+import ConfirmModal from "../components/ConfirmModal.jsx";
 import { useToast } from "../components/Toast.jsx";
 
 const FC_OPTIONS = [
@@ -29,6 +30,10 @@ export default function ModbusTCP() {
   });
   const [showAdd, setShowAdd] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
+  const [network, setNetwork] = useState({ ip: "", prefix_len: 24, gateway: "" });
+  const [candidate, setCandidate] = useState({ ip: "", prefix_len: 24, gateway: "" });
+  const [revertStatus, setRevertStatus] = useState({});
+  const [showNetworkConfirm, setShowNetworkConfirm] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -52,6 +57,50 @@ export default function ModbusTCP() {
   };
 
   useEffect(() => { fetchStatus(); fetchEntries(); fetchConfig(); }, []);
+
+  const fetchNetwork = async () => {
+    try {
+      const r = await apiGet("/api/network/config");
+      setNetwork(await r.json());
+    } catch {}
+  };
+  const fetchRevertStatus = async () => {
+    try {
+      const r = await apiGet("/api/network/status");
+      setRevertStatus(await r.json());
+    } catch {}
+  };
+  useEffect(() => {
+    fetchNetwork();
+    fetchRevertStatus();
+    const t = setInterval(() => {
+      fetchRevertStatus();
+      fetchNetwork();
+    }, 3000);
+    return () => clearInterval(t);
+  }, []);
+
+  const handleApplyNetwork = async () => {
+    const r = await apiPost("/api/network/apply", candidate);
+    const d = await r.json();
+    if (r.ok) {
+      setShowNetworkConfirm(false);
+      showToast("IP applied — confirm within 60s", "success");
+      fetchRevertStatus();
+    } else {
+      showToast(d.error || "Apply failed", "error");
+    }
+  };
+
+  const handleConfirmNetwork = async () => {
+    const r = await apiPost("/api/network/confirm", {});
+    if (r.ok) {
+      showToast("Network config confirmed — change is permanent", "success");
+      fetchRevertStatus();
+    } else {
+      showToast((await r.json()).error || "Confirm failed", "error");
+    }
+  };
 
   const handleStart = async () => {
     const r = await apiPost("/api/modbus-tcp/start", { port: config.port });
@@ -228,6 +277,67 @@ export default function ModbusTCP() {
           </div>
         )}
       </div>
+
+      <div className="card">
+        <div className="card-header">Network Settings (eth1)</div>
+        <div style={{ fontSize: "13px", marginBottom: "12px", display: "flex", gap: "20px" }}>
+          <span>IP: <strong className="mono">{network.ip || "—"}</strong></span>
+          <span>Subnet: <strong className="mono">/{network.prefix_len || "—"}</strong></span>
+          <span>Gateway: <strong className="mono">{network.gateway || "—"}</strong></span>
+        </div>
+
+        {revertStatus.pending && (
+          <div style={{
+            background: "#3a2a0a", border: "1px solid var(--status-warn)",
+            color: "var(--status-warn)", padding: "10px 14px", borderRadius: "var(--radius)",
+            fontSize: "13px", marginBottom: "12px",
+          }}>
+            Config pending — reverts in {revertStatus.revert_at
+              ? Math.max(0, Math.ceil(revertStatus.revert_at - Date.now() / 1000))
+              : "?"}s unless confirmed.
+            <button className="btn-primary" style={{ marginLeft: "12px", padding: "4px 12px", fontSize: "11px" }}
+              onClick={handleConfirmNetwork}>Confirm</button>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div className="form-row">
+              <label>Static IP</label>
+              <input placeholder="e.g. 192.168.2.100" value={candidate.ip}
+                onChange={(e) => setCandidate({ ...candidate, ip: e.target.value })}
+                style={{ width: 150 }} />
+            </div>
+            <div className="form-row">
+              <label>Prefix</label>
+              <input type="number" value={candidate.prefix_len}
+                onChange={(e) => setCandidate({ ...candidate, prefix_len: Number(e.target.value) })}
+                style={{ width: 60 }} min={1} max={32} />
+            </div>
+            <div className="form-row">
+              <label>Gateway</label>
+              <input placeholder="e.g. 192.168.2.1" value={candidate.gateway}
+                onChange={(e) => setCandidate({ ...candidate, gateway: e.target.value })}
+                style={{ width: 150 }} />
+            </div>
+            <button className="btn-primary"
+              onClick={() => setShowNetworkConfirm(true)}
+              disabled={!candidate.ip || !candidate.gateway}>
+              Apply
+            </button>
+          </div>
+        )}
+      </div>
+
+      <ConfirmModal
+        isOpen={showNetworkConfirm}
+        title="Change Network Address?"
+        message={`This will change eth1 to ${candidate.ip}/${candidate.prefix_len}. The page will redirect to the new address. The change reverts automatically in 60s unless you confirm.`}
+        confirmLabel="Change IP"
+        danger
+        onConfirm={handleApplyNetwork}
+        onCancel={() => setShowNetworkConfirm(false)}
+      />
     </div>
   );
 }

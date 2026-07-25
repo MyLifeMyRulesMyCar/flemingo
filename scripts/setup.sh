@@ -49,9 +49,19 @@ sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install --upgrade pip -q
 sudo -u "$SERVICE_USER" "$VENV_DIR/bin/pip" install -r "$REPO_ROOT/requirements.txt" -q
 echo "      Done."
 
-echo "[4/7] Adding $SERVICE_USER to gpio/spi/dialout groups..."
-usermod -aG gpio,spi,dialout "$SERVICE_USER" || true
+echo "[4/7] Adding $SERVICE_USER to gpio/spi/dialout/netdev groups..."
+usermod -aG gpio,spi,dialout,netdev "$SERVICE_USER" || true
 echo "      Done (log out/in for group changes to take effect if not using systemd)."
+
+# Grant passwordless nmcli for the network config feature (Stage 2)
+if [[ ! -f /etc/sudoers.d/flemingo-nmcli ]]; then
+    echo "      Adding sudoers rule for nmcli..."
+    tee "/etc/sudoers.d/flemingo-nmcli" > /dev/null << EOF_NMCLI
+$SERVICE_USER ALL=(ALL) NOPASSWD: /usr/bin/nmcli
+EOF_NMCLI
+    chmod 0440 /etc/sudoers.d/flemingo-nmcli
+    echo "      Done."
+fi
 
 echo "[5/7] Building dashboard..."
 if [[ -d "$REPO_ROOT/dashboard/node_modules" ]]; then

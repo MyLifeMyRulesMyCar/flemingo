@@ -177,6 +177,9 @@ config/mqtt.yaml
 # Phase 14 Modbus TCP - runtime-generated register map
 config/modbus_tcp_map.json
 
+# Stage 2 Network Config - runtime-generated backup
+config/network_backup.json
+
 # Phase 10 Dashboard
 dashboard/node_modules/
 dashboard/dist/
