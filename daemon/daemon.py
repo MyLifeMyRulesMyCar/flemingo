@@ -60,6 +60,7 @@ class PurpleIODaemon:
         self._di_initialized = False
         self.consecutive_errors = 0
         self.max_consecutive_errors = 10
+        self._tcp_health_failures = 0
         self._thread = None
 
         wd_config = load_reliability_config()["watchdog"]
@@ -101,11 +102,22 @@ class PurpleIODaemon:
         return not any(d.breaker.state.value == "open" for d in devices)
 
     def _check_modbus_tcp_health(self) -> bool:
-        if self.modbus_tcp_server is None:
+        if self.modbus_tcp_server is None or not self.modbus_tcp_server.running:
+            self._tcp_health_failures = 0
             return True
-        # Not started = normal, not a failure. The operator chooses
-        # when to start the server via the dashboard or REST API.
-        return True
+        status = self.modbus_tcp_server.get_status()
+        if status["host"] == "0.0.0.0":
+            self._tcp_health_failures = 0
+            return True  # already surfaced via isolation warning in dashboard
+        from core.network_config import has_carrier
+
+        if has_carrier():
+            self._tcp_health_failures = 0
+            return True
+        self._tcp_health_failures += 1
+        # Debounce: only unhealthy after 3 consecutive checks (~30s).
+        # A brief cable disconnect won't spam the watchdog.
+        return self._tcp_health_failures < 3
 
     # ----------------------------------------
     # Main loop

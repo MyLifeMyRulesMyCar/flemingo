@@ -39,19 +39,31 @@ export default function ModbusTCP() {
   const fetchStatus = async () => {
     try {
       const r = await apiGet("/api/modbus-tcp/status");
-      const d = await r.json();
-      setStatus(d);
-      if (d.running && d.host === "0.0.0.0") {
-        setIsolationWarning(
-          "eth1 has no active IP or cable — listening on all interfaces " +
-            "(0.0.0.0), not isolated from the management network. " +
-            "Configure eth1's static IP and plug in the cable first."
-        );
-      } else {
-        setIsolationWarning("");
-      }
+      setStatus(await r.json());
     } catch {}
   };
+
+  useEffect(() => {
+    if (!status.running) {
+      setIsolationWarning("");
+      return;
+    }
+    if (status.host === "0.0.0.0") {
+      setIsolationWarning(
+        "eth1 has no active IP or cable — listening on all interfaces " +
+          "(0.0.0.0), not isolated from the management network. " +
+          "Configure eth1's static IP and plug in the cable first."
+      );
+    } else if (network.carrier === false) {
+      setIsolationWarning(
+        "Cable disconnected on eth1 — server is still running on " +
+          status.host +
+          " but clients can no longer reach it."
+      );
+    } else {
+      setIsolationWarning("");
+    }
+  }, [status, network]);
 
   const fetchEntries = async () => {
     try {

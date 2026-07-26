@@ -119,6 +119,16 @@ def get_current_config(iface: str = DEFAULT_IFACE) -> NetworkConfig:
 # ----------------------------------------------------------------------
 # Applying config — nmcli-specific (the confirmed stack)
 # ----------------------------------------------------------------------
+def has_carrier(iface: str = DEFAULT_IFACE) -> bool:
+    """True if the Ethernet cable is physically plugged in. Returns False
+    if the carrier file can't be read (interface doesn't exist)."""
+    try:
+        with open(f"/sys/class/net/{iface}/carrier") as f:
+            return f.read().strip() == "1"
+    except FileNotFoundError:
+        return False
+
+
 def _get_active_connection_name(iface: str = DEFAULT_IFACE) -> str:
     """The nmcli connection profile name active on this device."""
     result = _run(["sudo", "/usr/local/bin/flemingo-net-apply", "get-connection"])
@@ -147,15 +157,10 @@ def apply_config(candidate: NetworkConfig, iface: str = DEFAULT_IFACE) -> None:
     """Apply a candidate static IP/subnet/gateway via nmcli."""
     _assert_not_management_iface(iface)
 
-    try:
-        with open(f"/sys/class/net/{iface}/carrier") as f:
-            if f.read().strip() != "1":
-                raise NetworkConfigError(
-                    f"No cable detected on {iface} — "
-                    f"plug in an Ethernet cable first"
-                )
-    except FileNotFoundError:
-        raise NetworkConfigError(f"Interface {iface} does not exist")
+    if not has_carrier(iface):
+        raise NetworkConfigError(
+            f"No cable detected on {iface} — " f"plug in an Ethernet cable first"
+        )
 
     conn_name = _get_or_create_connection(iface)
 

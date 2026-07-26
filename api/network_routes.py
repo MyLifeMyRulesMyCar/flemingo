@@ -17,6 +17,7 @@ from core.network_config import (
     NetworkConfig,
     NetworkConfigError,
     get_current_config,
+    has_carrier,
 )
 
 network_api = Blueprint("network_api", __name__)
@@ -31,11 +32,13 @@ def set_network_scheduler(scheduler):
 @network_api.route("/api/network/config", methods=["GET"])
 @require_role("viewer")
 def get_config():
+    resp = {"carrier": has_carrier()}
     try:
         cfg = get_current_config()
-    except NetworkConfigError as e:
-        return jsonify({"error": str(e)}), 503
-    return jsonify(cfg.to_dict()), 200
+        resp.update(cfg.to_dict())
+    except NetworkConfigError:
+        resp.update({"ip": "unknown", "prefix_len": 0, "gateway": "0.0.0.0"})
+    return jsonify(resp), 200
 
 
 @network_api.route("/api/network/apply", methods=["POST"])
