@@ -16,7 +16,7 @@ from api.modbus_tcp_routes import modbus_tcp_api, set_modbus_tcp_server
 
 class TestModbusTCPRoutes:
     @pytest.fixture
-    def client(self, auth_tokens):
+    def client(self, auth_tokens, monkeypatch):
         mock_srv = MagicMock()
         mock_srv.get_status.return_value = {
             "running": False,
@@ -29,6 +29,11 @@ class TestModbusTCPRoutes:
         mock_srv.get_register_map.return_value = []
         mock_srv.running = False
         set_modbus_tcp_server(mock_srv)
+
+        monkeypatch.setattr(
+            "api.modbus_tcp_routes._resolve_bind_host",
+            lambda: ("192.168.2.105", True),
+        )
 
         app = Flask(__name__)
         app.register_blueprint(modbus_tcp_api)

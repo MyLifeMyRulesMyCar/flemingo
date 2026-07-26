@@ -4,9 +4,12 @@
 # Mock subprocess.run so tests don't need root or a real interface.
 
 import os
+import subprocess
 import sys
 import time
 from unittest.mock import patch, MagicMock
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -19,6 +22,7 @@ from core.network_config import (
     apply_config,
     get_current_config,
     _get_or_create_connection,
+    _run,
 )
 
 
@@ -220,3 +224,35 @@ class TestApplyConfigArgShape:
                 "/usr/local/bin/flemingo-net-apply",
                 "activate",
             ]
+
+
+class TestRunErrorTranslation:
+    def test_missing_binary_raises_network_config_error(self):
+        """FileNotFoundError → NetworkConfigError."""
+        with patch("core.network_config.subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError("No such file")
+            with pytest.raises(NetworkConfigError):
+                _run(["nonexistent-binary"])
+
+    def test_permission_denied_raises_network_config_error(self):
+        """PermissionError → NetworkConfigError."""
+        with patch("core.network_config.subprocess.run") as mock_run:
+            mock_run.side_effect = PermissionError("Permission denied")
+            with pytest.raises(NetworkConfigError):
+                _run(["some-binary"])
+
+    def test_timeout_raises_network_config_error(self):
+        """TimeoutExpired → NetworkConfigError."""
+        with patch("core.network_config.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired("cmd", 10)
+            with pytest.raises(NetworkConfigError):
+                _run(["some-binary"], timeout=5)
+
+    def test_nonzero_return_still_returns_completed_process(self):
+        """A command that ran but failed still returns CompletedProcess."""
+        with patch("core.network_config.subprocess.run") as mock_run:
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["test"], returncode=1, stdout="", stderr="error"
+            )
+            result = _run(["test"])
+            assert result.returncode == 1

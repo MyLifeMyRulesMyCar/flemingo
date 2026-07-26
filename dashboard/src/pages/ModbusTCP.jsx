@@ -317,7 +317,7 @@ export default function ModbusTCP() {
       <div className="card">
         <div className="card-header">Network Settings (eth1)</div>
         <div style={{ fontSize: "13px", marginBottom: "12px", display: "flex", gap: "20px" }}>
-          <span>IP: <strong className="mono">{network.ip || "—"}</strong></span>
+          <span>IP: <strong className="mono">{network.ip === "unknown" ? "—" : network.ip || "—"}</strong></span>
           <span>Subnet: <strong className="mono">/{network.prefix_len || "—"}</strong></span>
           <span>Gateway: <strong className="mono">{network.gateway || "—"}</strong></span>
         </div>

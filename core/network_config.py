@@ -62,10 +62,22 @@ def _assert_not_management_iface(iface: str) -> None:
 
 def _run(args: list, timeout: int = NMCLI_TIMEOUT) -> subprocess.CompletedProcess:
     """Run a command as an explicit argument list — never a shell string.
-    Every argument must already be validated before reaching here."""
-    result = subprocess.run(
-        args, capture_output=True, text=True, timeout=timeout, check=False
-    )
+    Every argument must already be validated before reaching here.
+    Raises NetworkConfigError if the command couldn't even be run
+    (missing binary, timed out, permission denied) — every existing
+    caller already catches NetworkConfigError, so this closes the gap
+    at the one place all of them share instead of patching each
+    caller separately."""
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, timeout=timeout, check=False
+        )
+    except subprocess.TimeoutExpired as e:
+        logger.error(f"Command timed out after {timeout}s: {' '.join(args)}")
+        raise NetworkConfigError(f"Command timed out: {args[0]}") from e
+    except OSError as e:
+        logger.error(f"Command could not run: {' '.join(args)} -> {e}")
+        raise NetworkConfigError(f"Command could not run ({args[0]}): {e}") from e
     if result.returncode != 0:
         logger.error(
             f"Command failed ({args[0]}): {' '.join(args)} -> {result.stderr.strip()}"
