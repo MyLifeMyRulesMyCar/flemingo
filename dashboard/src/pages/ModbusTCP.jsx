@@ -27,6 +27,7 @@ export default function ModbusTCP() {
   const [config, setConfig] = useState({ host: "0.0.0.0", port: 502 });
   const [newEntry, setNewEntry] = useState({
     function_code: 3, address: 0, source_key: "", label: "",
+    source_type: "local", rtu_device_id: "", rtu_address: 0, writable: false,
   });
   const [showAdd, setShowAdd] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
@@ -35,6 +36,15 @@ export default function ModbusTCP() {
   const [revertStatus, setRevertStatus] = useState({});
   const [showNetworkConfirm, setShowNetworkConfirm] = useState(false);
   const [isolationWarning, setIsolationWarning] = useState("");
+  const [testWriteEntry, setTestWriteEntry] = useState(null);
+  const [testWriteValue, setTestWriteValue] = useState("");
+  const [testWriteResult, setTestWriteResult] = useState(null);
+  const [canChannels, setCanChannels] = useState([]);
+  const [showAddChannel, setShowAddChannel] = useState(false);
+  const [newChannel, setNewChannel] = useState({
+    name: "", id_address: 0, data_start_address: 0,
+    dlc_address: 0, trigger_coil_address: 0,
+  });
 
   const fetchStatus = async () => {
     try {
@@ -168,12 +178,75 @@ export default function ModbusTCP() {
   const addEntry = () => {
     if (!newEntry.source_key.trim()) return;
     setEntries([...entries, { ...newEntry, source_key: newEntry.source_key.trim() }]);
-    setNewEntry({ function_code: 3, address: 0, source_key: "", label: "" });
+    setNewEntry({ function_code: 3, address: 0, source_key: "", label: "",
+      source_type: "local", rtu_device_id: "", rtu_address: 0, writable: false });
     setShowAdd(false);
   };
 
   const removeEntry = (idx) => {
     setEntries(entries.filter((_, i) => i !== idx));
+  };
+
+  const handleTestWrite = async (entry) => {
+    setTestWriteEntry(entry);
+    setTestWriteValue("");
+    setTestWriteResult(null);
+  };
+
+  const submitTestWrite = async () => {
+    if (!testWriteEntry || !testWriteValue.trim()) return;
+    const val = parseInt(testWriteValue, 10);
+    if (isNaN(val) || val < 0 || val > 65535) {
+      setTestWriteResult({ ok: false, message: "Value must be 0–65535" });
+      return;
+    }
+    try {
+      const r = await apiPost("/api/modbus-tcp/register-map/test-write", {
+        device_id: testWriteEntry.rtu_device_id,
+        address: testWriteEntry.rtu_address,
+        value: val,
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setTestWriteResult({ ok: true, message: d.message });
+      } else {
+        setTestWriteResult({ ok: false, message: d.error || "Write failed" });
+      }
+    } catch (e) {
+      setTestWriteResult({ ok: false, message: "Network error" });
+    }
+  };
+
+  const fetchChannels = async () => {
+    try {
+      const r = await apiGet("/api/modbus-tcp/can-send-channels");
+      setCanChannels((await r.json()).channels || []);
+    } catch {}
+  };
+
+  useEffect(() => { fetchChannels(); }, []);
+
+  const handleAddChannel = () => {
+    if (!newChannel.name.trim()) return;
+    const ch = { ...newChannel, name: newChannel.name.trim() };
+    setCanChannels([...canChannels, ch]);
+    setNewChannel({
+      name: "", id_address: 0, data_start_address: 0,
+      dlc_address: 0, trigger_coil_address: 0,
+    });
+    setShowAddChannel(false);
+  };
+
+  const handleRemoveChannel = (idx) => {
+    setCanChannels(canChannels.filter((_, i) => i !== idx));
+  };
+
+  const handleSaveChannels = async () => {
+    const r = await apiPost("/api/modbus-tcp/can-send-channels", { channels: canChannels });
+    if (r.ok) {
+      showToast(`Saved (${canChannels.length} channels)`, "success");
+      fetchChannels();
+    } else showToast((await r.json()).error || "Save failed", "error");
   };
 
   return (
@@ -253,17 +326,55 @@ export default function ModbusTCP() {
               </select>
             </div>
             <div className="form-row">
-              <label>Address</label>
-              <input type="number" value={newEntry.address}
-                onChange={(e) => setNewEntry({ ...newEntry, address: Number(e.target.value) })}
-                style={{ width: 80 }} min={0} max={65535} />
+              <label>Type</label>
+              <select value={newEntry.source_type}
+                onChange={(e) => setNewEntry({ ...newEntry, source_type: e.target.value })}>
+                <option value="local">Local (DI/DO/CAN)</option>
+                <option value="modbus_rtu">Modbus RTU</option>
+              </select>
             </div>
-            <div className="form-row">
-              <label>Source Key</label>
-              <input placeholder="e.g. di:0, can:status.rx_total" value={newEntry.source_key}
-                onChange={(e) => setNewEntry({ ...newEntry, source_key: e.target.value })}
-                style={{ width: 200 }} />
-            </div>
+            {newEntry.source_type === "local" ? (
+              <>
+                <div className="form-row">
+                  <label>Address</label>
+                  <input type="number" value={newEntry.address}
+                    onChange={(e) => setNewEntry({ ...newEntry, address: Number(e.target.value) })}
+                    style={{ width: 80 }} min={0} max={65535} />
+                </div>
+                <div className="form-row">
+                  <label>Source Key</label>
+                  <input placeholder="e.g. di:0, can:status.rx_total" value={newEntry.source_key}
+                    onChange={(e) => setNewEntry({ ...newEntry, source_key: e.target.value })}
+                    style={{ width: 200 }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="form-row">
+                  <label>TCP Address</label>
+                  <input type="number" value={newEntry.address}
+                    onChange={(e) => setNewEntry({ ...newEntry, address: Number(e.target.value) })}
+                    style={{ width: 80 }} min={0} max={65535} />
+                </div>
+                <div className="form-row">
+                  <label>RTU Device ID</label>
+                  <input placeholder="e.g. dev1" value={newEntry.rtu_device_id}
+                    onChange={(e) => setNewEntry({ ...newEntry, rtu_device_id: e.target.value })}
+                    style={{ width: 80 }} />
+                </div>
+                <div className="form-row">
+                  <label>RTU Address</label>
+                  <input type="number" value={newEntry.rtu_address}
+                    onChange={(e) => setNewEntry({ ...newEntry, rtu_address: Number(e.target.value) })}
+                    style={{ width: 80 }} min={0} max={65535} />
+                </div>
+                <div className="form-row">
+                  <label>Writable</label>
+                  <input type="checkbox" checked={newEntry.writable}
+                    onChange={(e) => setNewEntry({ ...newEntry, writable: e.target.checked })} />
+                </div>
+              </>
+            )}
             <div className="form-row">
               <label>Label</label>
               <input placeholder="Optional" value={newEntry.label}
@@ -276,18 +387,29 @@ export default function ModbusTCP() {
 
         <table className="data-table" style={{ marginBottom: "10px" }}>
           <thead>
-            <tr><th>FC</th><th>Address</th><th>Source</th><th>Label</th><th></th></tr>
+            <tr><th>FC</th><th>Addr</th><th>Type</th><th>Source</th><th>W</th><th>Label</th><th></th></tr>
           </thead>
           <tbody>
             {entries.map((e, idx) => (
               <tr key={idx}>
                 <td>FC{e.function_code}</td>
                 <td>{e.address}</td>
+                <td>{e.source_type === "modbus_rtu" ? (
+                  <span title={`RTU device=${e.rtu_device_id} addr=${e.rtu_address}`}>RTU</span>
+                ) : "Local"}</td>
                 <td style={{ fontFamily: "var(--font-mono)" }}>{e.source_key}</td>
+                <td>{e.writable ? "✓" : "—"}</td>
                 <td style={{ fontFamily: "var(--font-sans)" }}>{e.label || "—"}</td>
-                <td>{isAdmin && <button className="btn-danger"
-                  style={{ padding: "2px 8px", fontSize: "11px" }}
-                  onClick={() => removeEntry(idx)}>Del</button>}</td>
+                <td>
+                  {e.source_type === "modbus_rtu" && e.writable && isOperator && (
+                    <button className="btn-default"
+                      style={{ padding: "2px 8px", fontSize: "11px", marginRight: "4px" }}
+                      onClick={() => handleTestWrite(e)}>Test Write</button>
+                  )}
+                  {isAdmin && <button className="btn-danger"
+                    style={{ padding: "2px 8px", fontSize: "11px" }}
+                    onClick={() => removeEntry(idx)}>Del</button>}
+                </td>
               </tr>
             ))}
             {entries.length === 0 && (
@@ -312,6 +434,127 @@ export default function ModbusTCP() {
             {validationErrors.map((e, i) => <div key={i}>• {e}</div>)}
           </div>
         )}
+
+        {testWriteEntry && (
+          <div style={{ marginTop: "12px", padding: "12px", background: "#1a1a2a",
+            border: "1px solid var(--border)", borderRadius: "var(--radius)", fontSize: "13px" }}>
+            <strong>Test Write</strong> — FC{testWriteEntry.function_code} addr {testWriteEntry.address}
+            {" → "}RTU device {testWriteEntry.rtu_device_id} addr {testWriteEntry.rtu_address}
+            <div style={{ display: "flex", gap: "8px", marginTop: "8px", alignItems: "center" }}>
+              <input type="number" placeholder="Value (0–65535)" value={testWriteValue}
+                onChange={(e) => setTestWriteValue(e.target.value)}
+                style={{ width: 140 }} min={0} max={65535} />
+              <button className="btn-primary" onClick={submitTestWrite}>Send</button>
+              <button className="btn-default" onClick={() => setTestWriteEntry(null)}>Close</button>
+            </div>
+            {testWriteResult && (
+              <div style={{ marginTop: "8px", color: testWriteResult.ok ? "var(--status-ok)" : "var(--status-err)" }}>
+                {testWriteResult.message}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header">
+          CAN Send Channels ({canChannels.length})
+          {isAdmin && (
+            <button className="btn-primary" style={{ padding: "4px 12px", fontSize: "11px" }}
+              onClick={() => setShowAddChannel(!showAddChannel)}>
+              {showAddChannel ? "Cancel" : "Add Send Channel"}
+            </button>
+          )}
+        </div>
+
+        {showAddChannel && (
+          <div className="form-inline" style={{ marginBottom: "12px" }}>
+            <div className="form-row">
+              <label>Name</label>
+              <input placeholder="Channel name" value={newChannel.name}
+                onChange={(e) => setNewChannel({ ...newChannel, name: e.target.value })}
+                style={{ width: 120 }} />
+            </div>
+            <div className="form-row">
+              <label>ID Reg</label>
+              <input type="number" value={newChannel.id_address}
+                onChange={(e) => setNewChannel({ ...newChannel, id_address: Number(e.target.value) })}
+                style={{ width: 80 }} min={0} max={65535} />
+            </div>
+            <div className="form-row">
+              <label>Data Start</label>
+              <input type="number" value={newChannel.data_start_address}
+                onChange={(e) => setNewChannel({ ...newChannel, data_start_address: Number(e.target.value) })}
+                style={{ width: 80 }} min={0} max={65535} />
+            </div>
+            <div className="form-row">
+              <label>DLC Reg</label>
+              <input type="number" value={newChannel.dlc_address}
+                onChange={(e) => setNewChannel({ ...newChannel, dlc_address: Number(e.target.value) })}
+                style={{ width: 80 }} min={0} max={65535} />
+            </div>
+            <div className="form-row">
+              <label>Trigger Coil</label>
+              <input type="number" value={newChannel.trigger_coil_address}
+                onChange={(e) => setNewChannel({ ...newChannel, trigger_coil_address: Number(e.target.value) })}
+                style={{ width: 80 }} min={0} max={65535} />
+            </div>
+            <button className="btn-primary" onClick={handleAddChannel}>Add</button>
+          </div>
+        )}
+
+        {canChannels.length > 0 && (
+          <table className="data-table" style={{ marginBottom: "10px" }}>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>ID (Reg)</th>
+                <th>Data (Regs 4)</th>
+                <th>DLC (Reg)</th>
+                <th>Trigger (Coil)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {canChannels.map((ch, idx) => (
+                <tr key={idx}>
+                  <td style={{ fontFamily: "var(--font-mono)" }}>{ch.name}</td>
+                  <td>{ch.id_address}</td>
+                  <td>{ch.data_start_address}–{ch.data_start_address + 3}</td>
+                  <td>{ch.dlc_address}</td>
+                  <td>{ch.trigger_coil_address}</td>
+                  <td>{isAdmin && (
+                    <button className="btn-danger" style={{ padding: "2px 8px", fontSize: "11px" }}
+                      onClick={() => handleRemoveChannel(idx)}>Del</button>
+                  )}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {canChannels.length === 0 && (
+          <div style={{ textAlign: "center", color: "var(--text-muted)", fontSize: "13px", marginBottom: "8px" }}>
+            No CAN send channels defined.
+          </div>
+        )}
+
+        <div style={{
+          background: "#1a1a2a", border: "1px solid #334",
+          color: "var(--text-muted)", padding: "8px 12px",
+          borderRadius: "var(--radius)", fontSize: "12px", marginTop: "8px",
+        }}>
+          Write all 6 registers in a single multi-register write (FC 16),
+          then write the trigger coil separately. Writing them individually
+          does not guarantee the frame sent matches what you intended.
+        </div>
+
+        {isAdmin && canChannels.length > 0 && (
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+            <button className="btn-primary" onClick={handleSaveChannels}>Save Channels</button>
+          </div>
+        )}
+
       </div>
 
       <div className="card">

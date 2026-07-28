@@ -49,10 +49,11 @@ from core.config import load_reliability_config, load_mqtt_config, VERSION
 from core.mqtt_manager import init_mqtt_manager
 from api.mqtt_routes import mqtt_api, set_mqtt_manager
 from api.system_routes import system_api, set_system_managers
-from api.modbus_tcp_routes import modbus_tcp_api, set_modbus_tcp_server
+from api.modbus_tcp_routes import modbus_tcp_api, set_modbus_tcp_server, set_modbus_tcp_modbus_manager
 from api.network_routes import network_api, set_network_scheduler
 from api.socket_handlers import register_socket_handlers
 from core.modbus_tcp_server import ModbusTCPServer
+from core.can_send_channel import load_channels
 from core.network_config import RevertScheduler
 
 logger = logging.getLogger(__name__)
@@ -106,9 +107,13 @@ io_manager = IOManager()
 # Modbus TCP server (Phase 14)
 # Created before the daemon so it can be passed in for watchdog registration.
 # ============================================
-_modbus_tcp = ModbusTCPServer(io_manager, state, can_manager)
+_modbus_tcp = ModbusTCPServer(
+    io_manager, state, can_manager, modbus_manager,
+    can_send_channels=load_channels(),
+)
 _modbus_tcp.load_register_map()
 set_modbus_tcp_server(_modbus_tcp)
+set_modbus_tcp_modbus_manager(modbus_manager)
 
 # ============================================
 # Network config scheduler (Stage 2)

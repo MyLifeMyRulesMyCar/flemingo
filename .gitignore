@@ -177,6 +177,9 @@ config/mqtt.yaml
 # Phase 14 Modbus TCP - runtime-generated register map
 config/modbus_tcp_map.json
 
+# Phase 14 Modbus TCP - runtime-generated CAN send channel definitions
+config/can_send_channels.json
+
 # Stage 2 Network Config - runtime-generated backup
 config/network_backup.json
 

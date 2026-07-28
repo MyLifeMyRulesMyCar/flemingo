@@ -15,11 +15,17 @@ from core.network_config import get_current_config, NetworkConfigError, DEFAULT_
 modbus_tcp_api = Blueprint("modbus_tcp_api", __name__)
 
 _modbus_tcp_server = None
+_modbus_manager = None
 
 
 def set_modbus_tcp_server(server):
     global _modbus_tcp_server
     _modbus_tcp_server = server
+
+
+def set_modbus_tcp_modbus_manager(manager):
+    global _modbus_manager
+    _modbus_manager = manager
 
 
 def _resolve_bind_host():
@@ -179,5 +185,113 @@ def validate_register_map():
         if errors:
             return jsonify({"valid": False, "errors": errors}), 200
         return jsonify({"valid": True, "errors": []}), 200
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Test write (one-off check before marking an entry writable)
+# ═══════════════════════════════════════════════════════════════════
+
+
+@modbus_tcp_api.route("/api/modbus-tcp/register-map/test-write", methods=["POST"])
+@require_role("operator")
+def test_write_register():
+    try:
+        data = parse_body(request)
+        device_id = str(data.get("device_id", ""))
+        address = data.get("address")
+        value = data.get("value")
+
+        if not device_id:
+            return jsonify({"error": "'device_id' is required"}), 400
+        if address is None:
+            return jsonify({"error": "'address' is required"}), 400
+        if value is None:
+            return jsonify({"error": "'value' is required"}), 400
+
+        from api.validators import validate_modbus_address, validate_modbus_register_value
+
+        addr = validate_modbus_address(address)
+        val = validate_modbus_register_value(value)
+
+        if _modbus_manager is None:
+            return jsonify({"error": "Modbus manager not available"}), 503
+
+        ok = _modbus_manager.write_holding_register(device_id, addr, val)
+        if ok:
+            return jsonify(
+                {
+                    "message": "Write succeeded",
+                    "device_id": device_id,
+                    "address": addr,
+                    "value": val,
+                }
+            ), 200
+        return (
+            jsonify(
+                {
+                    "error": "Write failed — device may be disconnected or address invalid",
+                    "device_id": device_id,
+                    "address": addr,
+                    "value": val,
+                }
+            ),
+            502,
+        )
+    except ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except (ValueError, RuntimeError) as e:
+        return jsonify({
+            "error": "Write failed — " + str(e),
+            "device_id": device_id,
+            "address": addr,
+            "value": val,
+        }), 502
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CAN send channels
+# ═══════════════════════════════════════════════════════════════════
+
+
+@modbus_tcp_api.route("/api/modbus-tcp/can-send-channels", methods=["GET"])
+@require_role("viewer")
+def get_can_send_channels():
+    channels = _modbus_tcp_server._can_send_channels if _modbus_tcp_server else []
+    return jsonify({"channels": [c.to_dict() for c in channels]}), 200
+
+
+@modbus_tcp_api.route("/api/modbus-tcp/can-send-channels", methods=["POST"])
+@require_role("admin")
+def save_can_send_channels():
+    try:
+        data = parse_body(request)
+        raw_channels = data.get("channels", [])
+        if not isinstance(raw_channels, list):
+            return jsonify({"error": "'channels' must be a list"}), 400
+
+        from core.can_send_channel import (
+            validate_channels,
+            save_channels,
+            CANSendChannel,
+        )
+
+        existing_entries = (
+            _modbus_tcp_server.get_register_map() if _modbus_tcp_server else []
+        )
+        errors = validate_channels(raw_channels, existing_entries)
+        if errors:
+            return jsonify({"error": "Validation failed", "details": errors}), 400
+
+        channels = [CANSendChannel.from_dict(c) for c in raw_channels]
+        save_channels(channels)
+        if _modbus_tcp_server:
+            _modbus_tcp_server._can_send_channels = channels
+
+        return (
+            jsonify({"message": f"CAN send channels saved ({len(channels)} entries)"}),
+            200,
+        )
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400

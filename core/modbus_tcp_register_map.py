@@ -39,21 +39,38 @@ VALID_SOURCE_PATTERNS = {
 
 VALID_FC_READ = {1, 2, 3, 4}
 VALID_FC_WRITE = {5, 15}
-# FC 6/16 not yet implemented
-VALID_FC = VALID_FC_READ | VALID_FC_WRITE
+VALID_FC_REGISTER_WRITE = {6, 16}
+VALID_FC = VALID_FC_READ | VALID_FC_WRITE | VALID_FC_REGISTER_WRITE
 
 
 class RegisterMapEntry:
     """One mapping from a Modbus (function_code, address) pair to a
-    Flemingo data source."""
+    Flemingo data source.
+
+    source_type values:
+      - "local"     — resolved from DI/DO/CAN state (existing behaviour)
+      - "modbus_rtu" — forwarded to a Modbus RTU device
+    """
 
     def __init__(
-        self, function_code: int, address: int, source_key: str, label: str = ""
+        self,
+        function_code: int,
+        address: int,
+        source_key: str,
+        label: str = "",
+        source_type: str = "local",
+        rtu_device_id: str = "",
+        rtu_address: int = 0,
+        writable: bool = False,
     ):
         self.function_code = function_code
         self.address = address
         self.source_key = source_key
         self.label = label
+        self.source_type = source_type
+        self.rtu_device_id = rtu_device_id
+        self.rtu_address = rtu_address
+        self.writable = writable
 
     def to_dict(self) -> dict:
         return {
@@ -61,6 +78,10 @@ class RegisterMapEntry:
             "address": self.address,
             "source_key": self.source_key,
             "label": self.label,
+            "source_type": self.source_type,
+            "rtu_device_id": self.rtu_device_id,
+            "rtu_address": self.rtu_address,
+            "writable": self.writable,
         }
 
     @staticmethod
@@ -68,8 +89,12 @@ class RegisterMapEntry:
         return RegisterMapEntry(
             function_code=int(d["function_code"]),
             address=int(d["address"]),
-            source_key=str(d["source_key"]),
+            source_key=str(d.get("source_key", "")),
             label=str(d.get("label", "")),
+            source_type=str(d.get("source_type", "local")),
+            rtu_device_id=str(d.get("rtu_device_id", "")),
+            rtu_address=int(d.get("rtu_address", 0)),
+            writable=bool(d.get("writable", False)),
         )
 
     def overlap_key(self) -> tuple:
@@ -151,26 +176,41 @@ def validate_entries(entries: List[dict]) -> List[str]:
         fc = e.get("function_code")
         addr = e.get("address")
         src = e.get("source_key", "")
+        src_type = e.get("source_type", "local")
+        writable = e.get("writable", False)
 
         if fc is None or addr is None:
             errors.append(f"{prefix}: 'function_code' and 'address' are required")
             continue
 
-        if fc not in VALID_FC:
-            errors.append(f"{prefix}: function_code {fc} not in {sorted(VALID_FC)}")
-        if not (0 <= int(addr) <= 65535):
-            errors.append(f"{prefix}: address {addr} out of range (0–65535)")
-        if src and src not in VALID_SOURCE_PATTERNS:
+        fc_int = int(fc)
+        addr_int = int(addr)
+
+        if fc_int not in VALID_FC:
+            errors.append(f"{prefix}: function_code {fc_int} not in {sorted(VALID_FC)}")
+        if not (0 <= addr_int <= 65535):
+            errors.append(f"{prefix}: address {addr_int} out of range (0–65535)")
+
+        if src_type not in ("local", "modbus_rtu"):
             errors.append(
-                f"{prefix}: unknown source_key '{src}'. "
-                f"Valid keys: {sorted(VALID_SOURCE_PATTERNS)}"
+                f"{prefix}: source_type must be 'local' or 'modbus_rtu', got {src_type!r}"
             )
 
-        key = (int(fc), int(addr))
+        if src_type == "local":
+            if src and src not in VALID_SOURCE_PATTERNS and fc_int not in VALID_FC_REGISTER_WRITE:
+                errors.append(
+                    f"{prefix}: unknown source_key '{src}'. "
+                    f"Valid keys: {sorted(VALID_SOURCE_PATTERNS)}"
+                )
+        elif src_type == "modbus_rtu":
+            if not e.get("rtu_device_id"):
+                errors.append(f"{prefix}: 'rtu_device_id' is required when source_type is 'modbus_rtu'")
+
+        key = (fc_int, addr_int)
         if key in seen:
             errors.append(
                 f"{prefix}: overlaps entry[{seen[key]}] — "
-                f"function_code {fc}, address {addr} already mapped"
+                f"function_code {fc_int}, address {addr_int} already mapped"
             )
         else:
             seen[key] = i

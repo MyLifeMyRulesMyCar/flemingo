@@ -46,11 +46,16 @@ class ModbusTCPServer:
         server.stop()
     """
 
-    def __init__(self, io_manager, state, can_manager):
+    def __init__(self, io_manager, state, can_manager, modbus_manager=None,
+                 can_send_channels=None):
         self._io = io_manager
         self._state = state
         self._can = can_manager
+        self._modbus = modbus_manager
         self._lock = threading.Lock()
+        self._can_send_channels = can_send_channels or []
+        self._can_send_lock = asyncio.Lock()
+        self._can_stage = {}
 
         self.host = "0.0.0.0"
         self.port = 5020  # non-privileged (>1024), Modbus TCP convention
@@ -166,13 +171,13 @@ class ModbusTCPServer:
                             tid, uid, fc, srv, addr, cnt
                         )
                     elif fc == 5:  # Write Single Coil
-                        addr, val = (
-                            struct.unpack(">HH", pdu[1:5]) if len(pdu) >= 5 else (0, 0)
-                        )
-                        _write_coil(srv, addr, 1 if val == 0xFF00 else 0)
-                        response = header + pdu  # echo
+                        response = await _handle_fc5_coil(pdu, tid, uid, srv)
+                    elif fc == 6:  # Write Single Register
+                        response = await _handle_fc6_write(pdu, tid, uid, srv)
                     elif fc == 15:  # Write Multiple Coils
                         response = _parse_fc15_write(pdu, tid, uid, srv)
+                    elif fc == 16:  # Write Multiple Registers
+                        response = await _handle_fc16_write(pdu, tid, uid, srv)
                     else:
                         # Unknown / unsupported function code
                         response = _build_exception(tid, uid, fc, 1)  # illegal function
@@ -303,3 +308,184 @@ def _write_coil(server, channel, value):
     if 0 <= channel < 4:
         server._io.write_output(channel, value)
         server._state.set_do(channel, value)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CAN send channel helpers
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _can_channel_for_trigger(server, coil_address):
+    """Return the CANSendChannel whose trigger_coil_address matches, or None."""
+    for ch in (server._can_send_channels or []):
+        if ch.trigger_coil_address == coil_address:
+            return ch
+    return None
+
+
+def _can_channel_for_staging(server, addr, cnt):
+    """Return the CANSendChannel whose 6-register staging block starts
+    at *addr* and spans *cnt* registers, or None."""
+    for ch in (server._can_send_channels or []):
+        staging = ch.staging_addresses()
+        if len(staging) == cnt and staging[0] == addr:
+            return ch
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FC 5 — coil write (DO + CAN trigger)
+# ═══════════════════════════════════════════════════════════════════
+
+
+async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
+    """Handle FC 5 — Write Single Coil.
+    If the coil address matches a CAN send channel trigger, fire the
+    staged CAN frame. Otherwise, write to DO output as before."""
+    fc = pdu[0]
+    header = struct.pack(">HHHB", tid, 0, 3, uid)
+    resp_len = 1 + len(pdu)
+
+    if len(pdu) < 5:
+        return _build_exception(tid, uid, fc, 0x02)
+
+    addr, val = struct.unpack(">HH", pdu[1:5])
+    coil_val = 1 if val == 0xFF00 else 0
+
+    channel = _can_channel_for_trigger(server, addr)
+    if channel is not None and coil_val == 1:
+        async with server._can_send_lock:
+            stage = server._can_stage.get(channel.name)
+            if stage is None:
+                return _build_exception(tid, uid, fc, 0x02)
+
+            loop = asyncio.get_running_loop()
+            try:
+                ok = await loop.run_in_executor(
+                    None,
+                    server._can.send_message,
+                    stage["id"],
+                    stage["data"][: stage["dlc"]],
+                    False,
+                )
+            except (ValueError, RuntimeError):
+                ok = False
+
+            server._can_stage.pop(channel.name, None)
+
+            if ok:
+                resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+                return resp_header + pdu
+            return _build_exception(tid, uid, fc, 0x0A)
+
+    _write_coil(server, addr, coil_val)
+    resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+    return resp_header + pdu
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Write helpers (FC 6/16) — holding register writes to RTU devices
+# ═══════════════════════════════════════════════════════════════════
+
+
+def _rtu_entry_for_address(server, address):
+    """Return the RTU-writable RegisterMapEntry for *address*, or None."""
+    for e in (server._register_map or []):
+        if e.address == address and e.function_code in (3, 4):
+            if e.source_type == "modbus_rtu" and e.writable:
+                return e
+    return None
+
+
+async def _handle_fc6_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
+    """Parse and execute an FC 6 (Write Single Register) request."""
+    header = struct.pack(">HHHB", tid, 0, 3, uid)
+    fc = pdu[0]
+
+    if len(pdu) < 5:
+        return _build_exception(tid, uid, fc, 0x02)
+
+    addr, value = struct.unpack(">HH", pdu[1:5])
+
+    entry = _rtu_entry_for_address(server, addr)
+    if entry is None:
+        return _build_exception(tid, uid, fc, 0x02)
+
+    loop = asyncio.get_running_loop()
+    try:
+        ok = await loop.run_in_executor(
+            None,
+            server._modbus.write_holding_register,
+            entry.rtu_device_id,
+            entry.rtu_address,
+            value,
+        )
+    except (ValueError, RuntimeError):
+        return _build_exception(tid, uid, fc, 0x0A)
+
+    if ok:
+        resp_len = 1 + len(pdu)
+        resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+        return resp_header + pdu
+    return _build_exception(tid, uid, fc, 0x0A)
+
+
+async def _handle_fc16_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
+    """Parse and execute an FC 16 (Write Multiple Registers) request.
+    Checks CAN send channel staging blocks first; falls through to
+    RTU holding register writes if no channel matches."""
+    fc = pdu[0]
+
+    if len(pdu) < 6:
+        return _build_exception(tid, uid, fc, 0x02)
+
+    addr, cnt, byte_count = struct.unpack(">HHB", pdu[1:6])
+
+    expected_bytes = cnt * 2
+    if byte_count != expected_bytes or len(pdu) < 6 + byte_count:
+        return _build_exception(tid, uid, fc, 0x03)
+
+    data_start = 6
+    reg_values = []
+    for i in range(cnt):
+        offset = data_start + i * 2
+        val = struct.unpack(">H", pdu[offset : offset + 2])[0]
+        reg_values.append(val)
+
+    channel = _can_channel_for_staging(server, addr, cnt)
+    if channel is not None:
+        server._can_stage[channel.name] = {
+            "id": reg_values[0] & 0x7FF,
+            "data": reg_values[1:5],
+            "dlc": min(reg_values[5] & 0xFF, 8),
+        }
+        resp_pdu = pdu[:5]
+        resp_len = 1 + len(resp_pdu)
+        resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+        return resp_header + resp_pdu
+
+    for i in range(cnt):
+        entry = _rtu_entry_for_address(server, addr + i)
+        if entry is None:
+            return _build_exception(tid, uid, fc, 0x02)
+
+    loop = asyncio.get_running_loop()
+    for i in range(cnt):
+        entry = _rtu_entry_for_address(server, addr + i)
+        try:
+            ok = await loop.run_in_executor(
+                None,
+                server._modbus.write_holding_register,
+                entry.rtu_device_id,
+                entry.rtu_address,
+                reg_values[i],
+            )
+        except (ValueError, RuntimeError):
+            return _build_exception(tid, uid, fc, 0x0A)
+        if not ok:
+            return _build_exception(tid, uid, fc, 0x0A)
+
+    resp_pdu = pdu[:5]
+    resp_len = 1 + len(resp_pdu)
+    resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
+    return resp_header + resp_pdu
