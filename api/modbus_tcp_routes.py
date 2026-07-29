@@ -248,6 +248,13 @@ def test_write_register():
             "address": addr,
             "value": val,
         }), 502
+    except Exception as e:
+        return jsonify({
+            "error": "Write failed — " + str(e),
+            "device_id": device_id,
+            "address": addr,
+            "value": val,
+        }), 502
 
 
 # ═══════════════════════════════════════════════════════════════════

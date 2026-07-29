@@ -420,7 +420,7 @@ async def _handle_fc6_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
             entry.rtu_address,
             value,
         )
-    except (ValueError, RuntimeError):
+    except Exception:
         return _build_exception(tid, uid, fc, 0x0A)
 
     if ok:
@@ -480,7 +480,7 @@ async def _handle_fc16_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
                 entry.rtu_address,
                 reg_values[i],
             )
-        except (ValueError, RuntimeError):
+        except Exception:
             return _build_exception(tid, uid, fc, 0x0A)
         if not ok:
             return _build_exception(tid, uid, fc, 0x0A)
