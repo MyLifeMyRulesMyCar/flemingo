@@ -12,8 +12,15 @@ import asyncio
 import logging
 import struct
 import threading
+from collections import deque
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+_EXCEPTION_MESSAGES = {
+    0x02: "Client tried to access an address that isn't mapped or isn't writable",
+    0x0A: "The field device (RTU slave or CAN bus) did not respond",
+}
 
 
 def _resolve_source(source_key: str, can_status: dict) -> int:
@@ -46,8 +53,14 @@ class ModbusTCPServer:
         server.stop()
     """
 
-    def __init__(self, io_manager, state, can_manager, modbus_manager=None,
-                 can_send_channels=None):
+    def __init__(
+        self,
+        io_manager,
+        state,
+        can_manager,
+        modbus_manager=None,
+        can_send_channels=None,
+    ):
         self._io = io_manager
         self._state = state
         self._can = can_manager
@@ -56,6 +69,8 @@ class ModbusTCPServer:
         self._can_send_channels = can_send_channels or []
         self._can_send_lock = asyncio.Lock()
         self._can_stage = {}
+        self.last_trigger_result = {}
+        self.recent_exceptions = deque(maxlen=20)
 
         self.host = "0.0.0.0"
         self.port = 5020  # non-privileged (>1024), Modbus TCP convention
@@ -181,6 +196,7 @@ class ModbusTCPServer:
                     else:
                         # Unknown / unsupported function code
                         response = _build_exception(tid, uid, fc, 1)  # illegal function
+                        srv._record_exception(fc, 0, 1)
 
                     writer.write(response)
                     await writer.drain()
@@ -230,6 +246,17 @@ class ModbusTCPServer:
         if self._register_map is None:
             return []
         return [e.to_dict() for e in self._register_map]
+
+    def _record_exception(self, function_code, address, exception_code):
+        self.recent_exceptions.append(
+            {
+                "timestamp": datetime.now().isoformat(),
+                "function_code": function_code,
+                "address": address,
+                "exception_code": exception_code,
+                "message": _EXCEPTION_MESSAGES.get(exception_code, "Unknown error"),
+            }
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -317,7 +344,7 @@ def _write_coil(server, channel, value):
 
 def _can_channel_for_trigger(server, coil_address):
     """Return the CANSendChannel whose trigger_coil_address matches, or None."""
-    for ch in (server._can_send_channels or []):
+    for ch in server._can_send_channels or []:
         if ch.trigger_coil_address == coil_address:
             return ch
     return None
@@ -326,7 +353,7 @@ def _can_channel_for_trigger(server, coil_address):
 def _can_channel_for_staging(server, addr, cnt):
     """Return the CANSendChannel whose 6-register staging block starts
     at *addr* and spans *cnt* registers, or None."""
-    for ch in (server._can_send_channels or []):
+    for ch in server._can_send_channels or []:
         staging = ch.staging_addresses()
         if len(staging) == cnt and staging[0] == addr:
             return ch
@@ -347,6 +374,7 @@ async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
     resp_len = 1 + len(pdu)
 
     if len(pdu) < 5:
+        server._record_exception(fc, 0, 0x02)
         return _build_exception(tid, uid, fc, 0x02)
 
     addr, val = struct.unpack(">HH", pdu[1:5])
@@ -357,6 +385,7 @@ async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
         async with server._can_send_lock:
             stage = server._can_stage.get(channel.name)
             if stage is None:
+                server._record_exception(fc, addr, 0x02)
                 return _build_exception(tid, uid, fc, 0x02)
 
             loop = asyncio.get_running_loop()
@@ -373,9 +402,19 @@ async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
 
             server._can_stage.pop(channel.name, None)
 
+            server.last_trigger_result[channel.name] = {
+                "timestamp": datetime.now().isoformat(),
+                "success": ok,
+                "id": stage["id"],
+                "data": stage["data"][: stage["dlc"]],
+                "dlc": stage["dlc"],
+                "error": None if ok else "send_message failed or CAN not connected",
+            }
+
             if ok:
                 resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
                 return resp_header + pdu
+            server._record_exception(fc, addr, 0x0A)
             return _build_exception(tid, uid, fc, 0x0A)
 
     _write_coil(server, addr, coil_val)
@@ -390,7 +429,7 @@ async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
 
 def _rtu_entry_for_address(server, address):
     """Return the RTU-writable RegisterMapEntry for *address*, or None."""
-    for e in (server._register_map or []):
+    for e in server._register_map or []:
         if e.address == address and e.function_code in (3, 4):
             if e.source_type == "modbus_rtu" and e.writable:
                 return e
@@ -403,12 +442,14 @@ async def _handle_fc6_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
     fc = pdu[0]
 
     if len(pdu) < 5:
+        server._record_exception(fc, 0, 0x02)
         return _build_exception(tid, uid, fc, 0x02)
 
     addr, value = struct.unpack(">HH", pdu[1:5])
 
     entry = _rtu_entry_for_address(server, addr)
     if entry is None:
+        server._record_exception(fc, addr, 0x02)
         return _build_exception(tid, uid, fc, 0x02)
 
     loop = asyncio.get_running_loop()
@@ -421,12 +462,14 @@ async def _handle_fc6_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
             value,
         )
     except Exception:
+        server._record_exception(fc, addr, 0x0A)
         return _build_exception(tid, uid, fc, 0x0A)
 
     if ok:
         resp_len = 1 + len(pdu)
         resp_header = struct.pack(">HHHB", tid, 0, resp_len, uid)
         return resp_header + pdu
+    server._record_exception(fc, addr, 0x0A)
     return _build_exception(tid, uid, fc, 0x0A)
 
 
@@ -437,12 +480,14 @@ async def _handle_fc16_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
     fc = pdu[0]
 
     if len(pdu) < 6:
+        server._record_exception(fc, 0, 0x02)
         return _build_exception(tid, uid, fc, 0x02)
 
     addr, cnt, byte_count = struct.unpack(">HHB", pdu[1:6])
 
     expected_bytes = cnt * 2
     if byte_count != expected_bytes or len(pdu) < 6 + byte_count:
+        server._record_exception(fc, addr, 0x03)
         return _build_exception(tid, uid, fc, 0x03)
 
     data_start = 6
@@ -467,6 +512,7 @@ async def _handle_fc16_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
     for i in range(cnt):
         entry = _rtu_entry_for_address(server, addr + i)
         if entry is None:
+            server._record_exception(fc, addr + i, 0x02)
             return _build_exception(tid, uid, fc, 0x02)
 
     loop = asyncio.get_running_loop()
@@ -481,8 +527,10 @@ async def _handle_fc16_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
                 reg_values[i],
             )
         except Exception:
+            server._record_exception(fc, addr + i, 0x0A)
             return _build_exception(tid, uid, fc, 0x0A)
         if not ok:
+            server._record_exception(fc, addr + i, 0x0A)
             return _build_exception(tid, uid, fc, 0x0A)
 
     resp_pdu = pdu[:5]

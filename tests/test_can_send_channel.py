@@ -80,53 +80,105 @@ class TestCANSendChannel:
 
 class TestValidateChannels:
     def test_valid_passes(self):
-        errors = validate_channels([
-            {"name": "ch1", "id_address": 100, "data_start_address": 101,
-             "dlc_address": 105, "trigger_coil_address": 50},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "ch1",
+                    "id_address": 100,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
+            ]
+        )
         assert errors == []
 
     def test_missing_name(self):
-        errors = validate_channels([
-            {"name": "", "id_address": 100, "data_start_address": 101,
-             "dlc_address": 105, "trigger_coil_address": 50},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "",
+                    "id_address": 100,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
+            ]
+        )
         assert len(errors) > 0
         assert "name" in errors[0].lower()
 
     def test_duplicate_name(self):
-        errors = validate_channels([
-            {"name": "ch1", "id_address": 100, "data_start_address": 101,
-             "dlc_address": 105, "trigger_coil_address": 50},
-            {"name": "ch1", "id_address": 200, "data_start_address": 201,
-             "dlc_address": 205, "trigger_coil_address": 51},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "ch1",
+                    "id_address": 100,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
+                {
+                    "name": "ch1",
+                    "id_address": 200,
+                    "data_start_address": 201,
+                    "dlc_address": 205,
+                    "trigger_coil_address": 51,
+                },
+            ]
+        )
         assert len(errors) > 0
         assert "already used" in errors[0].lower()
 
     def test_overlapping_registers(self):
-        errors = validate_channels([
-            {"name": "ch1", "id_address": 100, "data_start_address": 101,
-             "dlc_address": 105, "trigger_coil_address": 50},
-            {"name": "ch2", "id_address": 102, "data_start_address": 200,
-             "dlc_address": 204, "trigger_coil_address": 51},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "ch1",
+                    "id_address": 100,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
+                {
+                    "name": "ch2",
+                    "id_address": 102,
+                    "data_start_address": 200,
+                    "dlc_address": 204,
+                    "trigger_coil_address": 51,
+                },
+            ]
+        )
         assert len(errors) > 0
         assert "overlaps" in errors[0].lower()
 
     def test_data_start_overflow(self):
-        errors = validate_channels([
-            {"name": "ch1", "id_address": 100, "data_start_address": 65534,
-             "dlc_address": 200, "trigger_coil_address": 50},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "ch1",
+                    "id_address": 100,
+                    "data_start_address": 65534,
+                    "dlc_address": 200,
+                    "trigger_coil_address": 50,
+                },
+            ]
+        )
         assert len(errors) > 0
         assert "exceeds 65535" in errors[0].lower()
 
     def test_out_of_range(self):
-        errors = validate_channels([
-            {"name": "ch1", "id_address": 70000, "data_start_address": 101,
-             "dlc_address": 105, "trigger_coil_address": 50},
-        ])
+        errors = validate_channels(
+            [
+                {
+                    "name": "ch1",
+                    "id_address": 70000,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
+            ]
+        )
         assert len(errors) > 0
         assert "out of range" in errors[0].lower()
 
@@ -135,13 +187,22 @@ class TestValidateChannels:
 
         existing = [
             RegisterMapEntry.from_dict(
-                {"function_code": 3, "address": 101, "source_key": "can:status.rx_total"}
+                {
+                    "function_code": 3,
+                    "address": 101,
+                    "source_key": "can:status.rx_total",
+                }
             ),
         ]
         errors = validate_channels(
             [
-                {"name": "ch1", "id_address": 100, "data_start_address": 101,
-                 "dlc_address": 105, "trigger_coil_address": 50},
+                {
+                    "name": "ch1",
+                    "id_address": 100,
+                    "data_start_address": 101,
+                    "dlc_address": 105,
+                    "trigger_coil_address": 50,
+                },
             ],
             register_map_entries=existing,
         )

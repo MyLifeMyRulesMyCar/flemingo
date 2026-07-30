@@ -46,6 +46,19 @@ def _resolve_bind_host():
         return "0.0.0.0", False
 
 
+def _check_rtu_devices_exist(raw_entries):
+    """Return a list of error strings for entries referencing unknown RTU devices."""
+    errors = []
+    for e in raw_entries:
+        if e.get("source_type") == "modbus_rtu":
+            device_id = e.get("rtu_device_id", "")
+            if _modbus_manager is None or _modbus_manager.get_device(device_id) is None:
+                errors.append(
+                    f"rtu_device_id '{device_id}' is not a configured Modbus RTU device"
+                )
+    return errors
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Status
 # ═══════════════════════════════════════════════════════════════════
@@ -156,6 +169,13 @@ def save_register_map_route():
             RegisterMapEntry,
         )
 
+        device_errors = _check_rtu_devices_exist(raw_entries)
+        if device_errors:
+            return (
+                jsonify({"error": "Validation failed", "details": device_errors}),
+                400,
+            )
+
         errors = validate_entries(raw_entries)
         if errors:
             return jsonify({"error": "Validation failed", "details": errors}), 400
@@ -181,7 +201,8 @@ def validate_register_map():
 
         from core.modbus_tcp_register_map import validate_entries
 
-        errors = validate_entries(raw_entries)
+        device_errors = _check_rtu_devices_exist(raw_entries)
+        errors = device_errors + validate_entries(raw_entries)
         if errors:
             return jsonify({"valid": False, "errors": errors}), 200
         return jsonify({"valid": True, "errors": []}), 200
@@ -210,7 +231,10 @@ def test_write_register():
         if value is None:
             return jsonify({"error": "'value' is required"}), 400
 
-        from api.validators import validate_modbus_address, validate_modbus_register_value
+        from api.validators import (
+            validate_modbus_address,
+            validate_modbus_register_value,
+        )
 
         addr = validate_modbus_address(address)
         val = validate_modbus_register_value(value)
@@ -220,14 +244,17 @@ def test_write_register():
 
         ok = _modbus_manager.write_holding_register(device_id, addr, val)
         if ok:
-            return jsonify(
-                {
-                    "message": "Write succeeded",
-                    "device_id": device_id,
-                    "address": addr,
-                    "value": val,
-                }
-            ), 200
+            return (
+                jsonify(
+                    {
+                        "message": "Write succeeded",
+                        "device_id": device_id,
+                        "address": addr,
+                        "value": val,
+                    }
+                ),
+                200,
+            )
         return (
             jsonify(
                 {
@@ -242,19 +269,29 @@ def test_write_register():
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
     except (ValueError, RuntimeError) as e:
-        return jsonify({
-            "error": "Write failed — " + str(e),
-            "device_id": device_id,
-            "address": addr,
-            "value": val,
-        }), 502
+        return (
+            jsonify(
+                {
+                    "error": "Write failed — " + str(e),
+                    "device_id": device_id,
+                    "address": addr,
+                    "value": val,
+                }
+            ),
+            502,
+        )
     except Exception as e:
-        return jsonify({
-            "error": "Write failed — " + str(e),
-            "device_id": device_id,
-            "address": addr,
-            "value": val,
-        }), 502
+        return (
+            jsonify(
+                {
+                    "error": "Write failed — " + str(e),
+                    "device_id": device_id,
+                    "address": addr,
+                    "value": val,
+                }
+            ),
+            502,
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -266,7 +303,16 @@ def test_write_register():
 @require_role("viewer")
 def get_can_send_channels():
     channels = _modbus_tcp_server._can_send_channels if _modbus_tcp_server else []
-    return jsonify({"channels": [c.to_dict() for c in channels]}), 200
+    result = []
+    for c in channels:
+        d = c.to_dict()
+        d["last_trigger"] = (
+            _modbus_tcp_server.last_trigger_result.get(c.name)
+            if _modbus_tcp_server
+            else None
+        )
+        result.append(d)
+    return jsonify({"channels": result}), 200
 
 
 @modbus_tcp_api.route("/api/modbus-tcp/can-send-channels", methods=["POST"])
@@ -302,3 +348,19 @@ def save_can_send_channels():
         )
     except ValidationError as e:
         return jsonify({"error": str(e)}), 400
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Recent exceptions
+# ═══════════════════════════════════════════════════════════════════
+
+
+@modbus_tcp_api.route("/api/modbus-tcp/recent-exceptions", methods=["GET"])
+@require_role("viewer")
+def get_recent_exceptions():
+    if _modbus_tcp_server is None:
+        return jsonify({"exceptions": []}), 200
+    return (
+        jsonify({"exceptions": list(_modbus_tcp_server.recent_exceptions)}),
+        200,
+    )

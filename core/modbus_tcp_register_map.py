@@ -197,14 +197,20 @@ def validate_entries(entries: List[dict]) -> List[str]:
             )
 
         if src_type == "local":
-            if src and src not in VALID_SOURCE_PATTERNS and fc_int not in VALID_FC_REGISTER_WRITE:
+            if (
+                src
+                and src not in VALID_SOURCE_PATTERNS
+                and fc_int not in VALID_FC_REGISTER_WRITE
+            ):
                 errors.append(
                     f"{prefix}: unknown source_key '{src}'. "
                     f"Valid keys: {sorted(VALID_SOURCE_PATTERNS)}"
                 )
         elif src_type == "modbus_rtu":
             if not e.get("rtu_device_id"):
-                errors.append(f"{prefix}: 'rtu_device_id' is required when source_type is 'modbus_rtu'")
+                errors.append(
+                    f"{prefix}: 'rtu_device_id' is required when source_type is 'modbus_rtu'"
+                )
 
         key = (fc_int, addr_int)
         if key in seen:
@@ -214,5 +220,27 @@ def validate_entries(entries: List[dict]) -> List[str]:
             )
         else:
             seen[key] = i
+
+    from core.can_send_channel import load_channels
+
+    channels = load_channels()
+    occupied_by_channels = set()
+    for ch in channels:
+        occupied_by_channels.add(("coil", ch.trigger_coil_address))
+        occupied_by_channels.add(("holding", ch.id_address))
+        for offset in range(4):
+            occupied_by_channels.add(("holding", ch.data_start_address + offset))
+        occupied_by_channels.add(("holding", ch.dlc_address))
+
+    for i, e in enumerate(entries):
+        fc = e.get("function_code")
+        addr = e.get("address")
+        if fc is None or addr is None:
+            continue
+        kind = "coil" if int(fc) in (1, 5, 15) else "holding"
+        if (kind, int(addr)) in occupied_by_channels:
+            errors.append(
+                f"entry[{i}]: address {int(addr)} already used by a CAN send channel"
+            )
 
     return errors

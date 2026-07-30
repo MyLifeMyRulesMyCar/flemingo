@@ -166,7 +166,9 @@ class TestHoldingRegisterWrites:
         from core.modbus_tcp_register_map import RegisterMapEntry
 
         srv = MagicMock()
-        srv._register_map = [RegisterMapEntry.from_dict(e) if isinstance(e, dict) else e for e in entries]
+        srv._register_map = [
+            RegisterMapEntry.from_dict(e) if isinstance(e, dict) else e for e in entries
+        ]
         srv._modbus = MagicMock()
         srv._modbus.write_holding_register.return_value = write_return
         return srv
@@ -193,7 +195,9 @@ class TestHoldingRegisterWrites:
         srv._modbus.write_holding_register.assert_called_once_with("dev1", 200, 0x1234)
 
     def test_fc6_gateway_failure(self):
-        srv = self._make_server([self._entry_dict(3, 100, "dev1", 200)], write_return=False)
+        srv = self._make_server(
+            [self._entry_dict(3, 100, "dev1", 200)], write_return=False
+        )
         pdu = struct.pack(">BHH", 0x06, 100, 0x1234)
         resp = asyncio.run(_handle_fc6_write(pdu, tid=1, uid=1, server=srv))
 
@@ -212,10 +216,17 @@ class TestHoldingRegisterWrites:
         srv._modbus.write_holding_register.assert_not_called()
 
     def test_fc6_local_entry_not_writable(self):
-        srv = self._make_server([{
-            "function_code": 3, "address": 100, "source_key": "can:status.rx_total",
-            "source_type": "local", "writable": False,
-        }])
+        srv = self._make_server(
+            [
+                {
+                    "function_code": 3,
+                    "address": 100,
+                    "source_key": "can:status.rx_total",
+                    "source_type": "local",
+                    "writable": False,
+                }
+            ]
+        )
         pdu = struct.pack(">BHH", 0x06, 100, 0x1234)
         resp = asyncio.run(_handle_fc6_write(pdu, tid=1, uid=1, server=srv))
 
@@ -235,10 +246,12 @@ class TestHoldingRegisterWrites:
     # ── FC 16 ─────────────────────────────────────────────────
 
     def test_fc16_success(self):
-        srv = self._make_server([
-            self._entry_dict(3, 100, "dev1", 200),
-            self._entry_dict(3, 101, "dev1", 201),
-        ])
+        srv = self._make_server(
+            [
+                self._entry_dict(3, 100, "dev1", 200),
+                self._entry_dict(3, 101, "dev1", 201),
+            ]
+        )
         pdu = struct.pack(">BHHBHH", 0x10, 100, 2, 4, 0x1111, 0x2222)
         resp = asyncio.run(_handle_fc16_write(pdu, tid=2, uid=0, server=srv))
 
@@ -248,10 +261,13 @@ class TestHoldingRegisterWrites:
         srv._modbus.write_holding_register.assert_any_call("dev1", 201, 0x2222)
 
     def test_fc16_gateway_failure(self):
-        srv = self._make_server([
-            self._entry_dict(3, 100, "dev1", 200),
-            self._entry_dict(3, 101, "dev1", 201),
-        ], write_return=False)
+        srv = self._make_server(
+            [
+                self._entry_dict(3, 100, "dev1", 200),
+                self._entry_dict(3, 101, "dev1", 201),
+            ],
+            write_return=False,
+        )
         pdu = struct.pack(">BHHBHH", 0x10, 100, 2, 4, 0x1111, 0x2222)
         resp = asyncio.run(_handle_fc16_write(pdu, tid=2, uid=0, server=srv))
 
@@ -262,10 +278,12 @@ class TestHoldingRegisterWrites:
         assert srv._modbus.write_holding_register.call_count == 1
 
     def test_fc16_partial_not_writable_rejected(self):
-        srv = self._make_server([
-            self._entry_dict(3, 100, "dev1", 200, writable=True),
-            self._entry_dict(3, 101, "dev1", 201, writable=False),
-        ])
+        srv = self._make_server(
+            [
+                self._entry_dict(3, 100, "dev1", 200, writable=True),
+                self._entry_dict(3, 101, "dev1", 201, writable=False),
+            ]
+        )
         pdu = struct.pack(">BHHBHH", 0x10, 100, 2, 4, 0x1111, 0x2222)
         resp = asyncio.run(_handle_fc16_write(pdu, tid=2, uid=0, server=srv))
 
@@ -275,9 +293,11 @@ class TestHoldingRegisterWrites:
         srv._modbus.write_holding_register.assert_not_called()
 
     def test_fc16_partial_unmapped_rejected(self):
-        srv = self._make_server([
-            self._entry_dict(3, 100, "dev1", 200, writable=True),
-        ])
+        srv = self._make_server(
+            [
+                self._entry_dict(3, 100, "dev1", 200, writable=True),
+            ]
+        )
         pdu = struct.pack(">BHHBHH", 0x10, 100, 2, 4, 0x1111, 0x2222)
         resp = asyncio.run(_handle_fc16_write(pdu, tid=2, uid=0, server=srv))
 
@@ -304,9 +324,15 @@ class TestHoldingRegisterWrites:
         server = MagicMock()
         server._register_map = [
             RegisterMapEntry.from_dict(
-                {"function_code": 3, "address": 50, "source_key": "",
-                 "source_type": "modbus_rtu", "rtu_device_id": "dev1",
-                 "rtu_address": 100, "writable": True}
+                {
+                    "function_code": 3,
+                    "address": 50,
+                    "source_key": "",
+                    "source_type": "modbus_rtu",
+                    "rtu_device_id": "dev1",
+                    "rtu_address": 100,
+                    "writable": True,
+                }
             ),
         ]
         entry = _rtu_entry_for_address(server, 50)
@@ -319,8 +345,13 @@ class TestHoldingRegisterWrites:
         server = MagicMock()
         server._register_map = [
             RegisterMapEntry.from_dict(
-                {"function_code": 3, "address": 50, "source_key": "can:status.rx_total",
-                 "source_type": "local", "writable": False}
+                {
+                    "function_code": 3,
+                    "address": 50,
+                    "source_key": "can:status.rx_total",
+                    "source_type": "local",
+                    "writable": False,
+                }
             ),
         ]
         entry = _rtu_entry_for_address(server, 50)
@@ -342,16 +373,26 @@ class TestCANSendChannels:
         srv._register_map = []
         return srv
 
-    def _channel(self, name="test", id_addr=100, data_start=101,
-                 dlc_addr=105, trigger=50):
+    def _channel(
+        self, name="test", id_addr=100, data_start=101, dlc_addr=105, trigger=50
+    ):
         from core.can_send_channel import CANSendChannel
+
         return CANSendChannel(name, id_addr, data_start, dlc_addr, trigger)
 
     def _fc16_pdu(self, addr, id_val, data0, data1, data2, data3, dlc_val):
         return struct.pack(
             ">BHHBHHHHHH",
-            0x10, addr, 6, 12,
-            id_val, data0, data1, data2, data3, dlc_val,
+            0x10,
+            addr,
+            6,
+            12,
+            id_val,
+            data0,
+            data1,
+            data2,
+            data3,
+            dlc_val,
         )
 
     def _fc5_pdu(self, addr):
@@ -386,13 +427,17 @@ class TestCANSendChannels:
         ch = self._channel()
         srv = self._make_server([ch])
 
-        asyncio.run(_handle_fc16_write(
-            self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv))
+        asyncio.run(
+            _handle_fc16_write(
+                self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv
+            )
+        )
         asyncio.run(_handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv))
 
         # Second trigger without re-stage → 0x02
         resp = asyncio.run(
-            _handle_fc5_coil(self._fc5_pdu(50), tid=3, uid=0, server=srv))
+            _handle_fc5_coil(self._fc5_pdu(50), tid=3, uid=0, server=srv)
+        )
         fc, code = struct.unpack(">BB", resp[7:9])
         assert fc == 0x80 | 0x05
         assert code == 0x02
@@ -406,7 +451,8 @@ class TestCANSendChannels:
         srv = self._make_server([ch])
 
         resp = asyncio.run(
-            _handle_fc5_coil(self._fc5_pdu(50), tid=1, uid=0, server=srv))
+            _handle_fc5_coil(self._fc5_pdu(50), tid=1, uid=0, server=srv)
+        )
         fc, code = struct.unpack(">BB", resp[7:9])
         assert fc == 0x80 | 0x05
         assert code == 0x02
@@ -434,10 +480,14 @@ class TestCANSendChannels:
         srv = self._make_server([ch])
         srv._can.send_message.return_value = False
 
-        asyncio.run(_handle_fc16_write(
-            self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv))
+        asyncio.run(
+            _handle_fc16_write(
+                self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv
+            )
+        )
         resp = asyncio.run(
-            _handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv))
+            _handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv)
+        )
 
         fc, code = struct.unpack(">BB", resp[7:9])
         assert fc == 0x80 | 0x05
@@ -448,10 +498,14 @@ class TestCANSendChannels:
         srv = self._make_server([ch])
         srv._can.send_message.side_effect = RuntimeError("CAN not connected")
 
-        asyncio.run(_handle_fc16_write(
-            self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv))
+        asyncio.run(
+            _handle_fc16_write(
+                self._fc16_pdu(100, 0x001, 0, 0, 0, 0, 1), tid=1, uid=0, server=srv
+            )
+        )
         resp = asyncio.run(
-            _handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv))
+            _handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv)
+        )
 
         fc, code = struct.unpack(">BB", resp[7:9])
         assert fc == 0x80 | 0x05
@@ -465,9 +519,14 @@ class TestCANSendChannels:
         srv._modbus = MagicMock()
 
         # Should stage into CAN, NOT call modbus write_holding_register
-        resp = asyncio.run(_handle_fc16_write(
-            self._fc16_pdu(100, 0x123, 0x01, 0x02, 0x03, 0x04, 3),
-            tid=1, uid=0, server=srv))
+        resp = asyncio.run(
+            _handle_fc16_write(
+                self._fc16_pdu(100, 0x123, 0x01, 0x02, 0x03, 0x04, 3),
+                tid=1,
+                uid=0,
+                server=srv,
+            )
+        )
 
         fc_byte = struct.unpack(">B", resp[7:8])[0]
         assert fc_byte == 0x10
@@ -485,11 +544,13 @@ class TestCANSendChannels:
 
         async def scenario():
             await _handle_fc16_write(
-                self._fc16_pdu(100, 0x0A, 1, 2, 3, 4, 4), tid=1, uid=0, server=srv)
+                self._fc16_pdu(100, 0x0A, 1, 2, 3, 4, 4), tid=1, uid=0, server=srv
+            )
             await _handle_fc5_coil(self._fc5_pdu(50), tid=2, uid=0, server=srv)
 
             await _handle_fc16_write(
-                self._fc16_pdu(100, 0x0B, 5, 6, 7, 8, 4), tid=3, uid=0, server=srv)
+                self._fc16_pdu(100, 0x0B, 5, 6, 7, 8, 4), tid=3, uid=0, server=srv
+            )
             await _handle_fc5_coil(self._fc5_pdu(50), tid=4, uid=0, server=srv)
 
         asyncio.run(scenario())

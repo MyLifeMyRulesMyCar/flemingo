@@ -162,8 +162,12 @@ def validate_channels(
             seen_names.add(name)
         seen_names.add(name)
 
-        for field in ("id_address", "data_start_address", "dlc_address",
-                       "trigger_coil_address"):
+        for field in (
+            "id_address",
+            "data_start_address",
+            "dlc_address",
+            "trigger_coil_address",
+        ):
             val = c.get(field)
             if val is None:
                 errors.append(f"{prefix}: '{field}' is required")
@@ -179,9 +183,7 @@ def validate_channels(
         if "data_start_address" in c:
             dsa = int(c["data_start_address"])
             if dsa + 3 > 65535:
-                errors.append(
-                    f"{prefix}: data_start_address {dsa} + 3 exceeds 65535"
-                )
+                errors.append(f"{prefix}: data_start_address {dsa} + 3 exceeds 65535")
 
         ch = CANSendChannel.from_dict(c)
         regs = sorted(ch.register_addresses())
