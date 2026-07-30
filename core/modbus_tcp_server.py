@@ -370,7 +370,6 @@ async def _handle_fc5_coil(pdu: bytes, tid: int, uid: int, server) -> bytes:
     If the coil address matches a CAN send channel trigger, fire the
     staged CAN frame. Otherwise, write to DO output as before."""
     fc = pdu[0]
-    header = struct.pack(">HHHB", tid, 0, 3, uid)
     resp_len = 1 + len(pdu)
 
     if len(pdu) < 5:
@@ -438,7 +437,6 @@ def _rtu_entry_for_address(server, address):
 
 async def _handle_fc6_write(pdu: bytes, tid: int, uid: int, server) -> bytes:
     """Parse and execute an FC 6 (Write Single Register) request."""
-    header = struct.pack(">HHHB", tid, 0, 3, uid)
     fc = pdu[0]
 
     if len(pdu) < 5:

@@ -177,7 +177,6 @@ def validate_entries(entries: List[dict]) -> List[str]:
         addr = e.get("address")
         src = e.get("source_key", "")
         src_type = e.get("source_type", "local")
-        writable = e.get("writable", False)
 
         if fc is None or addr is None:
             errors.append(f"{prefix}: 'function_code' and 'address' are required")
