@@ -21,7 +21,7 @@ import os
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.io_manager import IOManager, DI_CHANNELS, INPUT_PINS
+from core.io_manager import IOManager, DI_CHANNELS
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
     print(f"Mode: {'SIMULATION' if status['simulation'] else 'HARDWARE'}")
 
     for name in DI_CHANNELS:
-        chip, line = INPUT_PINS[name]
+        chip, line = mgr.input_pins[name]
         print(f"  {name}: {chip} offset {line}")
 
     print("\nWatching for changes... Ctrl+C to stop\n")

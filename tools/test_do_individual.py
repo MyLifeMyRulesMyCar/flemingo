@@ -22,7 +22,7 @@ import os
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from core.io_manager import IOManager, DO_CHANNELS, OUTPUT_PINS
+from core.io_manager import IOManager, DO_CHANNELS
 
 
 def main():
@@ -42,7 +42,7 @@ def main():
 
     try:
         for ch, name in enumerate(DO_CHANNELS):
-            chip, line = OUTPUT_PINS[name]
+            chip, line = mgr.output_pins[name]
             print(f"--- {name}  ({chip}, offset {line}) ---")
 
             print(f"  {name} ON")

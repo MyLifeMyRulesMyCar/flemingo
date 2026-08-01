@@ -5,6 +5,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-07-31
+### Added
+- Modbus TCP server (`core/modbus_tcp_server.py`) — live-reading server
+  exposing DI/DO/CAN state to SCADA/HMI over Modbus TCP with manual MBAP
+  framing
+- Configurable register map (`core/modbus_tcp_register_map.py`) — map
+  function code + address pairs to local source keys or RTU device/register
+  pairs with `source_type` ("local"/"modbus_rtu"), `rtu_device_id`,
+  `rtu_address`, and per-entry `writable` flag
+- FC 6/FC 16 RTU holding register writes to RS485 devices via
+  `asyncio.run_in_executor()` — blocking I/O never stalls the event loop
+- CAN send channels (`core/can_send_channel.py`) — 6-register FC 16 stage
+  block + single FC 5 coil trigger, `asyncio.Lock`-serialized to prevent
+  concurrent stage/trigger races, stage cleared after successful send
+- Test-write endpoint `POST /api/modbus-tcp/register-map/test-write`
+  (operator role) for one-off write checks before marking an entry writable
+- CAN send channel CRUD `GET/POST /api/modbus-tcp/can-send-channels`
+  with overlap validation against register map entries
+- Network config isolation (`core/network_config.py`) — eth1 static IP
+  via `netplan`, `RevertScheduler` auto-reverts bad IP changes after 60s
+- `scripts/flemingo-net-apply` — privilege boundary that re-derives
+  interface name rather than trusting caller-supplied connection name,
+  validates octet ranges not just digit-count regex
+- Cable-disconnect detection via `/sys/class/net/eth1/carrier`
+- Hardware config externalized to `config/hardware.yaml` (GPIO chip/line
+  map, CAN crystal/bitrate) with `HARDWARE_DEFAULTS` fallback in
+  `core/config.py`; malformed hardware config blocks startup
+- CAN RX filter with subscriber gating (`core/can_manager.set_id_filter()`)
+- Dashboard Modbus TCP page: ServerCard, NetworkCard, RegisterMapCard
+  (with RTU fields and Test Write), CANSendChannelsCard
+- `.opencode/conventions.md` — project codebase conventions
+- 95 new tests (Modbus TCP server/framing, register map validation,
+  FC 6/16 RTU write, CAN send stage+trigger, network config, hardware
+  config, CAN filter routes)
+
+### Changed
+- `RegisterMapEntry` extended with `source_type` (default "local"),
+  `rtu_device_id`, `rtu_address`, `writable` fields — existing persisted
+  entries stay read-only on upgrade
+- `core/io_manager.py` — GPIO pins loaded from `core/config.py`'s
+  `HARDWARE_DEFAULTS` instead of hardcoded module-level constants
+- `core/can_manager.py` — health-check reliability improvements,
+  RX filter plumbing
+- `core/config.py` — `HARDWARE_DEFAULTS` dict + `_deep_merge()` pattern
+  for `config/hardware.yaml` overrides
+- `daemon/daemon.py` — watchdog registration for Modbus TCP health
+  watches carrier state on eth1
+- Dashboard: CAN RX filter picker, Modbus TCP multi-card layout
+- `api/validators.py` extended for Modbus TCP port, register map entries,
+  network IPs, gateway-in-subnet checks
+
+### Fixed
+- `_resolve_bind_host` no longer 500s when network command fails —
+  falls back to `0.0.0.0` with a warning
+- `_check_modbus_tcp_health` now checks `/sys/class/net/eth1/carrier`
+  instead of unconditionally returning `True`
+- `tests/test_do_individual.py` and `tests/test_di_monitor.py` moved to
+  `tools/` — they imported removed constants and caused pytest collection
+  to abort before any test ran (271 tests now collect clean)
+
 ## [0.13.2] - 2026-07-12
 ### Changed
 - Added MQTT/CAN bridge refinements for local broker traffic and runtime stability.
