@@ -183,6 +183,10 @@ config/can_send_channels.json
 # Stage 2 Network Config - runtime-generated backup
 config/network_backup.json
 
+# Phase 15 Hardware Config - per-deployment, not per-repo
+# (copy config/hardware.yaml.example if you need to customise)
+config/hardware.yaml
+
 # Phase 10 Dashboard
 dashboard/node_modules/
 dashboard/dist/

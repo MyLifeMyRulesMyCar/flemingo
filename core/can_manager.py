@@ -436,7 +436,19 @@ class CANManager:
 
 # Module-level singleton - import `can_manager` directly once this is
 # wired into a Flask app, same pattern as efio_daemon/can_manager.py
-can_manager = CANManager()
+_logger = logging.getLogger(__name__)
+try:
+    from core.config import load_hardware_config
+
+    _hw = load_hardware_config()
+    can_manager = CANManager(
+        bitrate=_hw["can"]["bitrate"], crystal=_hw["can"]["crystal"]
+    )
+except Exception as e:
+    _logger.error(
+        "Failed to load hardware config for CAN — using defaults. Error: %s", e
+    )
+    can_manager = CANManager()
 
 
 if __name__ == "__main__":

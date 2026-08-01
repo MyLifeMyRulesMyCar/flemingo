@@ -63,3 +63,39 @@ class TestIOManagerSimulation:
 
         assert len(DI_CHANNELS) == 4
         assert len(DO_CHANNELS) == 4
+
+
+class TestIOManagerHardwareConfig:
+    def test_pin_map_loaded_from_config(self, monkeypatch):
+        from unittest.mock import patch
+
+        hw = {
+            "gpio": {
+                "outputs": {
+                    "DO0": {"chip": "/dev/gpiochip1", "line": 24},
+                    "DO1": {"chip": "/dev/gpiochip1", "line": 25},
+                    "DO2": {"chip": "/dev/gpiochip2", "line": 99},
+                    "DO3": {"chip": "/dev/gpiochip1", "line": 27},
+                },
+                "inputs": {
+                    "DI0": {"chip": "/dev/gpiochip4", "line": 4},
+                    "DI1": {"chip": "/dev/gpiochip4", "line": 6},
+                    "DI2": {"chip": "/dev/gpiochip3", "line": 2},
+                    "DI3": {"chip": "/dev/gpiochip3", "line": 3},
+                },
+            },
+            "can": {"bitrate": 125000, "crystal": 8000000},
+        }
+        monkeypatch.setattr("core.config.load_hardware_config", lambda **kw: hw)
+
+        with patch("core.io_manager.gpiod.request_lines", side_effect=OSError("mock")):
+            from core.io_manager import IOManager
+
+            io = IOManager()
+            assert io.simulation
+            # DO2 should use the overridden chip/line
+            assert io.output_pins["DO2"] == ("/dev/gpiochip2", 99)
+            # DO0 should still use the default
+            assert io.output_pins["DO0"] == ("/dev/gpiochip1", 24)
+            # DI inputs should be defaults
+            assert io.input_pins["DI0"] == ("/dev/gpiochip4", 4)

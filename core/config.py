@@ -189,3 +189,125 @@ def load_mqtt_config(path=None, force_reload=False):
 
     _mqtt_cache = merged
     return _mqtt_cache
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Hardware config (GPIO pin map, CAN bitrate / crystal)
+# ═══════════════════════════════════════════════════════════════════
+
+_HARDWARE_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "config",
+    "hardware.yaml",
+)
+
+HARDWARE_DEFAULTS = {
+    "gpio": {
+        "outputs": {
+            "DO0": {"chip": "/dev/gpiochip1", "line": 24},
+            "DO1": {"chip": "/dev/gpiochip1", "line": 25},
+            "DO2": {"chip": "/dev/gpiochip1", "line": 26},
+            "DO3": {"chip": "/dev/gpiochip1", "line": 27},
+        },
+        "inputs": {
+            "DI0": {"chip": "/dev/gpiochip4", "line": 4},
+            "DI1": {"chip": "/dev/gpiochip4", "line": 6},
+            "DI2": {"chip": "/dev/gpiochip3", "line": 2},
+            "DI3": {"chip": "/dev/gpiochip3", "line": 3},
+        },
+    },
+    "can": {"bitrate": 125000, "crystal": 8000000},
+}
+
+_VALID_OUTPUTS = {"DO0", "DO1", "DO2", "DO3"}
+_VALID_INPUTS = {"DI0", "DI1", "DI2", "DI3"}
+_VALID_CAN_BITRATES = {125000, 250000, 500000, 1000000}
+_VALID_CAN_CRYSTALS = {8000000, 16000000}
+
+_hardware_cache = None
+
+
+def load_hardware_config(path=None, force_reload=False):
+    global _hardware_cache
+    if _hardware_cache is not None and not force_reload:
+        return _hardware_cache
+
+    path = path or _HARDWARE_CONFIG_PATH
+    if not os.path.exists(path):
+        _hardware_cache = dict(HARDWARE_DEFAULTS)
+        return _hardware_cache
+
+    loaded = {}
+    try:
+        import yaml
+
+        with open(path, "r") as f:
+            loaded = yaml.safe_load(f) or {}
+    except ImportError:
+        logger.warning("PyYAML not installed — using built-in hardware defaults.")
+        _hardware_cache = dict(HARDWARE_DEFAULTS)
+        return _hardware_cache
+    except Exception as e:
+        logger.error(
+            "Could not parse %s (%s) — using built-in hardware defaults.", path, e
+        )
+        _hardware_cache = dict(HARDWARE_DEFAULTS)
+        return _hardware_cache
+
+    merged = _deep_merge(HARDWARE_DEFAULTS, loaded)
+    _validate_hardware_config(merged)
+    _hardware_cache = merged
+    return _hardware_cache
+
+
+def _validate_hardware_config(cfg):
+    """Fail loudly on malformed hardware.yaml — this describes real wiring,
+    not tuneable thresholds. A wrong pin mapping is the difference between
+    DO2 switching the right actuator and one it shouldn't."""
+    for name, pin in cfg["gpio"]["outputs"].items():
+        if name not in _VALID_OUTPUTS:
+            raise ValueError(
+                f"hardware.yaml: unknown output channel '{name}' "
+                f"(valid: {sorted(_VALID_OUTPUTS)})"
+            )
+        chip = str(pin.get("chip", ""))
+        if not chip.startswith("/dev/gpiochip"):
+            raise ValueError(
+                f"hardware.yaml: {name} has an invalid chip path: {chip!r}"
+            )
+        line = pin.get("line")
+        if not isinstance(line, int) or line < 0:
+            raise ValueError(
+                f"hardware.yaml: {name} has an invalid line number: {line!r}"
+            )
+
+    for name, pin in cfg["gpio"]["inputs"].items():
+        if name not in _VALID_INPUTS:
+            raise ValueError(
+                f"hardware.yaml: unknown input channel '{name}' "
+                f"(valid: {sorted(_VALID_INPUTS)})"
+            )
+        chip = str(pin.get("chip", ""))
+        if not chip.startswith("/dev/gpiochip"):
+            raise ValueError(
+                f"hardware.yaml: {name} has an invalid chip path: {chip!r}"
+            )
+        line = pin.get("line")
+        if not isinstance(line, int) or line < 0:
+            raise ValueError(
+                f"hardware.yaml: {name} has an invalid line number: {line!r}"
+            )
+
+    bitrate = cfg["can"]["bitrate"]
+    if bitrate not in _VALID_CAN_BITRATES:
+        raise ValueError(
+            f"hardware.yaml: unsupported CAN bitrate {bitrate} "
+            f"(valid: {sorted(_VALID_CAN_BITRATES)})"
+        )
+
+    crystal = cfg["can"]["crystal"]
+    if crystal not in _VALID_CAN_CRYSTALS:
+        raise ValueError(
+            f"hardware.yaml: unsupported CAN crystal {crystal} "
+            f"(valid: {sorted(_VALID_CAN_CRYSTALS)})"
+        )

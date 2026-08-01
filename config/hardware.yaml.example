@@ -1,0 +1,21 @@
+# Flemingo hardware config — copy this to config/hardware.yaml and edit
+# only the values that differ for your board revision.  Missing entries
+# fall back to the defaults shown below.
+#
+# The active config/hardware.yaml is gitignored — it belongs to the
+# specific board this deployment runs on, not to the repo.
+
+gpio:
+  outputs:
+    DO0: {chip: /dev/gpiochip1, line: 24}
+    DO1: {chip: /dev/gpiochip1, line: 25}
+    DO2: {chip: /dev/gpiochip1, line: 26}
+    DO3: {chip: /dev/gpiochip1, line: 27}
+  inputs:
+    DI0: {chip: /dev/gpiochip4, line: 4}
+    DI1: {chip: /dev/gpiochip4, line: 6}
+    DI2: {chip: /dev/gpiochip3, line: 2}
+    DI3: {chip: /dev/gpiochip3, line: 3}
+can:
+  bitrate: 125000
+  crystal: 8000000
