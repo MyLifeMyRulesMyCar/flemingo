@@ -14,11 +14,15 @@
 #   6. Enable flemingo site: symlink sites-available → sites-enabled
 #   7. nginx -t (config test — aborts if invalid)
 #   8. systemctl enable + restart nginx
+#   9. Rewrite the flemingo.service unit to bind Flask to 127.0.0.1
+#      instead of 0.0.0.0, and restart it — otherwise the plaintext
+#      Flask/JWT/SocketIO endpoint on :5000 stays reachable from the
+#      network in parallel with the HTTPS proxy this script just set up.
 #
 # After any change to nginx/flemingo.conf:
 #   sudo nginx -t && sudo systemctl reload nginx
 #
-# Flask still runs on port 5000 on loopback.
+# Flask is bound to 127.0.0.1 (step 9) once this script has run.
 # From outside the box, use https://<device-ip> (port 443).
 
 set -euo pipefail
@@ -106,6 +110,22 @@ systemctl enable nginx
 systemctl restart nginx
 echo "      nginx enabled and restarted."
 
+# ─── 9. Restrict Flask to loopback ──────────────────────────────────
+FLEMINGO_UNIT="/etc/systemd/system/flemingo.service"
+if [[ -f "$FLEMINGO_UNIT" ]]; then
+    echo "[9/9] Restricting Flask to 127.0.0.1 (nginx now owns the network-facing port)..."
+    sed -i 's/--bind 0\.0\.0\.0:5000/--bind 127.0.0.1:5000/' "$FLEMINGO_UNIT"
+    sed -i 's/^Environment=PURPLEIO_HOST=0\.0\.0\.0$/Environment=PURPLEIO_HOST=127.0.0.1/' \
+        "$FLEMINGO_UNIT"
+    systemctl daemon-reload
+    systemctl restart flemingo
+    echo "      flemingo.service now binds 127.0.0.1:5000 only."
+else
+    echo "[9/9] WARNING: $FLEMINGO_UNIT not found — Flask still binds 0.0.0.0:5000."
+    echo "      Run scripts/setup.sh first, then re-run this script, or the"
+    echo "      plaintext API on :5000 stays reachable alongside HTTPS on :443."
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────
 DEVICE_IP=$(hostname -I | awk '{print $1}')
 echo ""
@@ -116,8 +136,8 @@ echo "   https://${DEVICE_IP}         (HTTPS — browsers will warn"
 echo "                                  about self-signed cert)"
 echo "   http://${DEVICE_IP}          (redirects to HTTPS)"
 echo ""
-echo " Flask still runs on port 5000 on loopback only."
-echo " nginx terminates TLS and proxies to it."
+echo " Flask is bound to 127.0.0.1:5000 (not reachable from the network)."
+echo " nginx terminates TLS on 443 and proxies to it over loopback."
 echo ""
 echo " WebSocket: wss://${DEVICE_IP}/socket.io/"
 echo ""

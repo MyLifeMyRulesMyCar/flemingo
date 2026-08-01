@@ -89,8 +89,10 @@ echo ""
 echo "[7/7] Install nginx + TLS reverse proxy now?"
 echo "      (speeds: nginx proxies HTTPS on 443, Flask runs on 5000 loopback)"
 read -r -t 15 -p "      Install? [y/N] " REPLY || REPLY="n"
+NGINX_INSTALLED="n"
 if [[ "$REPLY" =~ ^[Yy]$ ]]; then
     bash "$SCRIPT_DIR/install_nginx.sh"
+    NGINX_INSTALLED="y"
 else
     echo "      Skipped — run 'sudo bash scripts/install_nginx.sh' later."
 fi
@@ -101,5 +103,9 @@ echo " Done."
 echo ""
 echo "   systemctl status flemingo          — check the service"
 echo "   journalctl -u flemingo -f          — follow live logs"
-echo "   http://$(hostname -I | awk '{print $1}'):5000   — dashboard"
+if [[ "$NGINX_INSTALLED" == "y" ]]; then
+    echo "   https://$(hostname -I | awk '{print $1}')   — dashboard (TLS)"
+else
+    echo "   http://$(hostname -I | awk '{print $1}'):5000   — dashboard (plaintext — no TLS installed yet)"
+fi
 echo "============================================================"

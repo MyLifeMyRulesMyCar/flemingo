@@ -75,7 +75,8 @@ class CANManager:
         self.rx_thread = None
         self.running = False
 
-        self.message_log = deque(maxlen=1000)
+        self.rx_log = deque(maxlen=500)
+        self.tx_log = deque(maxlen=500)
         self.subscribers: List[Callable] = []
         self.id_filter: set = set()  # empty = no filter, all IDs pass
 
@@ -345,7 +346,7 @@ class CANManager:
             "extended": msg.extended,
             "rtr": msg.rtr,
         }
-        self.message_log.append(entry)
+        self.rx_log.append(entry)
 
         for sub in self.subscribers:
             try:
@@ -370,7 +371,7 @@ class CANManager:
 
             if ok:
                 self.stats["tx_total"] += 1
-                self.message_log.append(
+                self.tx_log.append(
                     {
                         "timestamp": datetime.now().isoformat(),
                         "direction": "TX",
@@ -404,10 +405,20 @@ class CANManager:
             }
 
     def get_recent_messages(self, count: int = 100) -> List[Dict]:
-        return list(self.message_log)[-count:]
+        merged = sorted(
+            list(self.rx_log) + list(self.tx_log), key=lambda e: e["timestamp"]
+        )
+        return merged[-count:]
+
+    @property
+    def message_log(self) -> List[Dict]:
+        return sorted(
+            list(self.rx_log) + list(self.tx_log), key=lambda e: e["timestamp"]
+        )
 
     def clear_log(self):
-        self.message_log.clear()
+        self.rx_log.clear()
+        self.tx_log.clear()
 
     def subscribe(self, callback: Callable):
         if callback not in self.subscribers:
