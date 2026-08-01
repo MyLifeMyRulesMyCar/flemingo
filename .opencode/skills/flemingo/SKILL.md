@@ -1,3 +1,8 @@
+---
+name: flemingo
+description: Use for ALL changes to this codebase — Flask blueprints, Modbus TCP handlers, CAN, hardware config, React dashboard, pytest tests. Covers architecture layers (core/api/daemon/dashboard/config), conventions (atomic writes, blocking I/O dispatch, exception codes, testing standards), security boundaries, and where common configuration lives.
+---
+
 # Flemingo — Codebase Conventions
 
 Read this before making changes. It captures patterns established
