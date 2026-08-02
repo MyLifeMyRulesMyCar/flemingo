@@ -17,6 +17,7 @@
 # core.resilience.health_status.
 
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -145,7 +146,8 @@ class ModbusManager:
         self._health_register = 0  # holding register to read as liveness probe
 
         health_status.update("modbus", "unknown", "No devices configured")
-        self._start_health_check()
+        if not os.getenv("FLEMINGO_SKIP_AUTOSTART"):
+            self._start_health_check()
 
     # ----------------------------------------
     # Aggregate health
