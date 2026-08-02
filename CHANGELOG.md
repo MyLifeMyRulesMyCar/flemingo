@@ -4,6 +4,10 @@ All notable changes to Flemingo are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+### Security
+- react-router-dom 6.30.4 carries CVE-2026-53668 (Data Mode-only XSS,
+  not reachable in this dashboard's Declarative Mode). Documented in
+  `docs/SECURITY-NOTES.md`; `npm audit` now runs in CI (non-blocking).
 
 ## [0.14.0] - 2026-07-31
 ### Added
