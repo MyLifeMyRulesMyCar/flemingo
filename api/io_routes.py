@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # api/io_routes.py
 # REST endpoints for digital I/O (DI/DO).
-# No auth yet - matches the rest of Phase 4. Add @jwt_required() here
-# once auth is wired in.
+# Auth: every route below carries @require_role — comment updated,
+# was previously stale ("No auth yet") from before auth was wired in.
 
 from flask import Blueprint, jsonify, request
 from core.state import state

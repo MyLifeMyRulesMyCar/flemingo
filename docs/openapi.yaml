@@ -1,0 +1,1454 @@
+openapi: 3.0.3
+info:
+  title: Flemingo API
+  version: 0.14.0
+  description: "Auto-generated from api/app.py's live url_map \u2014 do not hand-edit paths/security here,\
+    \ edit PATHS_DETAIL in scripts/generate_openapi_stub.py and regenerate instead."
+servers:
+- url: https://{device-ip}
+  description: Device (TLS)
+tags:
+- name: auth_api
+- name: can_api
+- name: health_api
+- name: io_api
+- name: modbus_api
+- name: modbus_tcp_api
+- name: mqtt_api
+- name: network_api
+- name: status
+- name: system_api
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Role scopes used loosely here for documentation: viewer < operator < admin. Flemingo\
+        \ does not do real OAuth2 scope checking \u2014 this just documents which @require_role the endpoint\
+        \ carries."
+paths:
+  /api/auth/change-password:
+    post:
+      operationId: auth_api_change_password
+      summary: Change the current user's password
+      tags:
+      - auth_api
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - old_password
+              - new_password
+              properties:
+                old_password:
+                  type: string
+                  format: password
+                new_password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: "Password changed \u2014 re-login for new tokens"
+        '400':
+          description: Missing fields, or new_password fails policy
+        '401':
+          description: old_password incorrect, or bad access token
+  /api/auth/login:
+    post:
+      operationId: auth_api_login
+      summary: Log in and receive access + refresh tokens
+      tags:
+      - auth_api
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - username
+              - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  user:
+                    type: object
+                  warning:
+                    type: string
+                    description: Present if must_change_password is set
+        '400':
+          description: username and password are required
+        '401':
+          description: Invalid credentials
+        '429':
+          description: "Too many failed attempts \u2014 rate limited"
+  /api/auth/logout:
+    post:
+      operationId: auth_api_logout
+      summary: "Log out \u2014 best-effort revoke of the supplied refresh token"
+      tags:
+      - auth_api
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Logged out
+        '401':
+          description: Missing or invalid access token
+  /api/auth/me:
+    get:
+      operationId: auth_api_me
+      summary: Current user's decoded token payload
+      tags:
+      - auth_api
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  role:
+                    type: string
+                    enum:
+                    - viewer
+                    - operator
+                    - admin
+                  must_change_password:
+                    type: boolean
+        '401':
+          description: Missing or invalid access token
+  /api/auth/refresh:
+    post:
+      operationId: auth_api_refresh
+      summary: Exchange a refresh token for a new access token
+      tags:
+      - auth_api
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New access token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+        '400':
+          description: refresh_token is required
+        '401':
+          description: Invalid or expired refresh token
+  /api/auth/users:
+    get:
+      operationId: auth_api_list_users
+      summary: List all users
+      tags:
+      - auth_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Missing or invalid access token
+        '403':
+          description: 'Requires role: admin'
+    post:
+      operationId: auth_api_create_user
+      summary: Create a new user
+      tags:
+      - auth_api
+      security:
+      - bearerAuth:
+        - admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - username
+              - password
+              - role
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  format: password
+                role:
+                  type: string
+                  enum:
+                  - viewer
+                  - operator
+                  - admin
+      responses:
+        '201':
+          description: User created
+        '400':
+          description: Missing field or invalid role
+        '401':
+          description: Missing or invalid access token
+        '403':
+          description: 'Requires role: admin'
+        '409':
+          description: Username already exists
+  /api/auth/users/{username}:
+    delete:
+      operationId: auth_api_delete_user
+      summary: Delete a user (cannot delete your own account)
+      tags:
+      - auth_api
+      security:
+      - bearerAuth:
+        - admin
+      parameters:
+      - name: username
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: User deleted
+        '400':
+          description: Cannot delete your own account
+        '401':
+          description: Missing or invalid access token
+        '403':
+          description: 'Requires role: admin'
+        '404':
+          description: User not found
+  /api/can/connect:
+    post:
+      operationId: can_api_connect
+      summary: can_api.connect
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/can/disconnect:
+    post:
+      operationId: can_api_disconnect
+      summary: can_api.disconnect
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/can/filter:
+    post:
+      operationId: can_api_set_filter
+      summary: can_api.set_filter
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/can/messages:
+    get:
+      operationId: can_api_get_messages
+      summary: can_api.get_messages
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/can/messages/clear:
+    post:
+      operationId: can_api_clear_messages
+      summary: can_api.clear_messages
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/can/send:
+    post:
+      operationId: can_api_send
+      summary: can_api.send
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/can/status:
+    get:
+      operationId: can_api_get_status
+      summary: can_api.get_status
+      tags:
+      - can_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/health:
+    get:
+      operationId: health_api_health
+      summary: health_api.health
+      tags:
+      - health_api
+      security: []
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+  /api/health/detailed:
+    get:
+      operationId: health_api_health_detailed
+      summary: health_api.health_detailed
+      tags:
+      - health_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/io:
+    get:
+      operationId: io_api_get_io
+      summary: io_api.get_io
+      tags:
+      - io_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/io/do/{channel}:
+    post:
+      operationId: io_api_set_do
+      summary: io_api.set_do
+      tags:
+      - io_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      parameters:
+      - name: channel
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/io/status:
+    get:
+      operationId: io_api_get_io_hw_status
+      summary: io_api.get_io_hw_status
+      tags:
+      - io_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/modbus-tcp/can-send-channels:
+    get:
+      operationId: modbus_tcp_api_get_can_send_channels
+      summary: modbus_tcp_api.get_can_send_channels
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+    post:
+      operationId: modbus_tcp_api_save_can_send_channels
+      summary: modbus_tcp_api.save_can_send_channels
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/config:
+    get:
+      operationId: modbus_tcp_api_get_config
+      summary: modbus_tcp_api.get_config
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+    put:
+      operationId: modbus_tcp_api_update_config
+      summary: modbus_tcp_api.update_config
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/recent-exceptions:
+    get:
+      operationId: modbus_tcp_api_get_recent_exceptions
+      summary: modbus_tcp_api.get_recent_exceptions
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/modbus-tcp/register-map:
+    get:
+      operationId: modbus_tcp_api_get_register_map
+      summary: modbus_tcp_api.get_register_map
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+    post:
+      operationId: modbus_tcp_api_save_register_map_route
+      summary: modbus_tcp_api.save_register_map_route
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/register-map/test-write:
+    post:
+      operationId: modbus_tcp_api_test_write_register
+      summary: modbus_tcp_api.test_write_register
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/register-map/validate:
+    post:
+      operationId: modbus_tcp_api_validate_register_map
+      summary: modbus_tcp_api.validate_register_map
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/start:
+    post:
+      operationId: modbus_tcp_api_start_server
+      summary: modbus_tcp_api.start_server
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus-tcp/status:
+    get:
+      operationId: modbus_tcp_api_get_status
+      summary: modbus_tcp_api.get_status
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/modbus-tcp/stop:
+    post:
+      operationId: modbus_tcp_api_stop_server
+      summary: modbus_tcp_api.stop_server
+      tags:
+      - modbus_tcp_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices:
+    get:
+      operationId: modbus_api_get_devices
+      summary: modbus_api.get_devices
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+    post:
+      operationId: modbus_api_create_device
+      summary: modbus_api.create_device
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices/{device_id}:
+    delete:
+      operationId: modbus_api_delete_device
+      summary: modbus_api.delete_device
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices/{device_id}/connect:
+    post:
+      operationId: modbus_api_connect_device
+      summary: modbus_api.connect_device
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices/{device_id}/disconnect:
+    post:
+      operationId: modbus_api_disconnect_device
+      summary: modbus_api.disconnect_device
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices/{device_id}/read:
+    post:
+      operationId: modbus_api_read_register
+      summary: modbus_api.read_register
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/devices/{device_id}/write:
+    post:
+      operationId: modbus_api_write_register
+      summary: modbus_api.write_register
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      parameters:
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/modbus/logs:
+    get:
+      operationId: modbus_api_get_logs
+      summary: modbus_api.get_logs
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/modbus/ports:
+    get:
+      operationId: modbus_api_get_ports
+      summary: modbus_api.get_ports
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/modbus/scan:
+    post:
+      operationId: modbus_api_scan
+      summary: modbus_api.scan
+      tags:
+      - modbus_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/can:
+    get:
+      operationId: mqtt_api_get_can_bridge
+      summary: mqtt_api.get_can_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/mqtt/bridges/can/config:
+    post:
+      operationId: mqtt_api_config_can_bridge
+      summary: mqtt_api.config_can_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/can/start:
+    post:
+      operationId: mqtt_api_start_can_bridge
+      summary: mqtt_api.start_can_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/can/stop:
+    post:
+      operationId: mqtt_api_stop_can_bridge
+      summary: mqtt_api.stop_can_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/io:
+    get:
+      operationId: mqtt_api_get_io_bridge
+      summary: mqtt_api.get_io_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/mqtt/bridges/io/config:
+    post:
+      operationId: mqtt_api_config_io_bridge
+      summary: mqtt_api.config_io_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/io/start:
+    post:
+      operationId: mqtt_api_start_io_bridge
+      summary: mqtt_api.start_io_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/io/stop:
+    post:
+      operationId: mqtt_api_stop_io_bridge
+      summary: mqtt_api.stop_io_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/modbus:
+    get:
+      operationId: mqtt_api_get_modbus_bridge
+      summary: mqtt_api.get_modbus_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/mqtt/bridges/modbus/config:
+    post:
+      operationId: mqtt_api_config_modbus_bridge
+      summary: mqtt_api.config_modbus_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/modbus/registers:
+    post:
+      operationId: mqtt_api_update_modbus_registers
+      summary: mqtt_api.update_modbus_registers
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/modbus/start:
+    post:
+      operationId: mqtt_api_start_modbus_bridge
+      summary: mqtt_api.start_modbus_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/bridges/modbus/stop:
+    post:
+      operationId: mqtt_api_stop_modbus_bridge
+      summary: mqtt_api.stop_modbus_bridge
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/connect:
+    post:
+      operationId: mqtt_api_connect_broker
+      summary: mqtt_api.connect_broker
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/disconnect:
+    post:
+      operationId: mqtt_api_disconnect_broker
+      summary: mqtt_api.disconnect_broker
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - operator
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: operator'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/mqtt/status:
+    get:
+      operationId: mqtt_api_get_status
+      summary: mqtt_api.get_status
+      tags:
+      - mqtt_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/network/apply:
+    post:
+      operationId: network_api_apply
+      summary: network_api.apply
+      tags:
+      - network_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/network/config:
+    get:
+      operationId: network_api_get_config
+      summary: network_api.get_config
+      tags:
+      - network_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/network/confirm:
+    post:
+      operationId: network_api_confirm
+      summary: network_api.confirm
+      tags:
+      - network_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
+  /api/network/status:
+    get:
+      operationId: network_api_get_status
+      summary: network_api.get_status
+      tags:
+      - network_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/status:
+    get:
+      operationId: status
+      summary: status
+      tags:
+      - status
+      security: []
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+  /api/system/backup:
+    get:
+      operationId: system_api_backup_download
+      summary: system_api.backup_download
+      tags:
+      - system_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+  /api/system/info:
+    get:
+      operationId: system_api_system_info
+      summary: system_api.system_info
+      tags:
+      - system_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/system/metrics:
+    get:
+      operationId: system_api_system_metrics
+      summary: system_api.system_metrics
+      tags:
+      - system_api
+      security:
+      - bearerAuth:
+        - viewer
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: viewer'
+  /api/system/restore:
+    post:
+      operationId: system_api_restore_upload
+      summary: system_api.restore_upload
+      tags:
+      - system_api
+      security:
+      - bearerAuth:
+        - admin
+      responses:
+        '200':
+          description: 'TODO: fill in actual response schema'
+        '401':
+          description: Missing or invalid token
+        '403':
+          description: 'Requires role: admin'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+        description: 'TODO: fill in actual request schema'
